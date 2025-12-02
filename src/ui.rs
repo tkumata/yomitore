@@ -103,13 +103,14 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 
 fn render_evaluation(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
-        .title("評価結果 (n: 次のトレーニング)")
+        .title("評価結果 (Shift+↑/↓ or Shift+j/k: スクロール, n: 次のトレーニング)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
 
     let paragraph = Paragraph::new(app.evaluation_text.as_str())
         .block(block)
         .wrap(Wrap { trim: false })
+        .scroll((app.evaluation_text_scroll, 0))
         .style(Style::default());
 
     frame.render_widget(paragraph, area);

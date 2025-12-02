@@ -71,6 +71,7 @@ async fn main() -> Result<(), AppError> {
                     app.summary_input.clear();
                     app.cursor_position = 0;
                     app.original_text_scroll = 0;
+                    app.evaluation_text_scroll = 0;
                     app.status_message = "Generating new text...".to_string();
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
@@ -183,10 +184,18 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                             app.should_quit = true;
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            app.original_text_scroll = app.original_text_scroll.saturating_add(1);
+                            if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_add(1);
+                            } else {
+                                app.original_text_scroll = app.original_text_scroll.saturating_add(1);
+                            }
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
+                            if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_sub(1);
+                            } else {
+                                app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
+                            }
                         }
                         _ => {}
                     }
