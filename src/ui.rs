@@ -51,7 +51,8 @@ fn render_header(frame: &mut Frame, area: Rect) {
 fn render_original_text(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title("原文 (↑/↓ or j/k: スクロール)")
-        .borders(Borders::ALL);
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
     let paragraph = Paragraph::new(app.original_text.as_str())
         .wrap(Wrap { trim: false })
         .scroll((app.original_text_scroll, 0))
@@ -63,9 +64,9 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
     let title = "あなたの要約 (i:入力モード Esc:通常モード Ctrl+S:送信)";
 
     let border_style = if app.is_editing {
-        Style::default().fg(Color::Yellow)
+        Style::default().fg(Color::Cyan)
     } else {
-        Style::default()
+        Style::default().fg(Color::Blue)
     };
 
     let block = Block::default()
@@ -102,10 +103,16 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 }
 
 fn render_evaluation(app: &App, frame: &mut Frame, area: Rect) {
+    let border_color = if app.evaluation_passed {
+        Color::Green
+    } else {
+        Color::Red
+    };
+
     let block = Block::default()
         .title("評価結果 (Shift+↑/↓ or Shift+j/k: スクロール, n: 次のトレーニング)")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
+        .border_style(Style::default().fg(border_color));
 
     let paragraph = Paragraph::new(app.evaluation_text.as_str())
         .block(block)

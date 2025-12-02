@@ -51,6 +51,8 @@ async fn main() -> Result<(), AppError> {
                     if let Some(client) = &app.api_client {
                         match client.evaluate_summary(&app.original_text, &app.summary_input).await {
                             Ok(evaluation) => {
+                                // Check if the evaluation contains "はい" (yes) to determine pass/fail
+                                app.evaluation_passed = evaluation.contains("はい");
                                 app.evaluation_text = evaluation;
                                 app.show_evaluation = true;
                                 app.is_evaluating = false;
@@ -58,6 +60,7 @@ async fn main() -> Result<(), AppError> {
                             }
                             Err(e) => {
                                 app.evaluation_text = format!("Error: {}", e);
+                                app.evaluation_passed = false;
                                 app.show_evaluation = true;
                                 app.is_evaluating = false;
                                 app.status_message = "Error occurred.".to_string();
