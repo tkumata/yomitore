@@ -129,9 +129,3 @@ pub struct WeeklyStats {
     pub correct: usize,
     pub incorrect: usize,
 }
-
-impl WeeklyStats {
-    pub fn total(&self) -> usize {
-        self.correct + self.incorrect
-    }
-}
