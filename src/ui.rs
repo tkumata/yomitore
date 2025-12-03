@@ -1,4 +1,5 @@
-use crate::app::App;
+use crate::app::{App, ViewMode};
+use crate::reports;
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -6,6 +7,20 @@ use ratatui::{
 
 /// Renders the user interface widgets.
 pub fn render(app: &mut App, frame: &mut Frame) {
+    // Check if we should show a report instead of the normal view
+    match app.view_mode {
+        ViewMode::MonthlyReport => {
+            render_monthly_report_view(app, frame);
+            return;
+        }
+        ViewMode::WeeklyReport => {
+            render_weekly_report_view(app, frame);
+            return;
+        }
+        ViewMode::Normal => {
+            // Continue with normal rendering
+        }
+    }
     let main_layout = if app.show_evaluation {
         Layout::default()
             .direction(Direction::Vertical)
@@ -125,9 +140,39 @@ fn render_evaluation(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::TOP);
-    let status_text = format!(" {} | q: 終了 ", app.status_message);
+    let status_text = format!(" {} | m: 月次 | w: 週次 | q: 終了 ", app.status_message);
     let paragraph = Paragraph::new(status_text)
         .alignment(Alignment::Right)
         .block(block);
     frame.render_widget(paragraph, area);
+}
+
+fn render_monthly_report_view(app: &App, frame: &mut Frame) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),      // Header
+            Constraint::Min(0),         // Report
+            Constraint::Length(3),      // Status
+        ])
+        .split(frame.area());
+
+    render_header(frame, layout[0]);
+    reports::render_monthly_report(frame, layout[1], &app.stats);
+    render_status_bar(app, frame, layout[2]);
+}
+
+fn render_weekly_report_view(app: &App, frame: &mut Frame) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),      // Header
+            Constraint::Min(0),         // Report
+            Constraint::Length(3),      // Status
+        ])
+        .split(frame.area());
+
+    render_header(frame, layout[0]);
+    reports::render_weekly_report(frame, layout[1], &app.stats);
+    render_status_bar(app, frame, layout[2]);
 }
