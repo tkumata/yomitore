@@ -21,39 +21,55 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             // Continue with normal rendering
         }
     }
-    let main_layout = if app.show_evaluation {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),      // Header
-                Constraint::Percentage(30), // Original Text
-                Constraint::Percentage(25), // Summary Input
-                Constraint::Min(0),         // Evaluation Result
-                Constraint::Length(3),      // Status
-            ])
-            .split(frame.area())
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),      // Header
-                Constraint::Percentage(45), // Original Text
-                Constraint::Min(0),         // Summary Input
-                Constraint::Length(3),      // Status
-            ])
-            .split(frame.area())
-    };
+
+    // Main layout: Header, Content, Status
+    let main_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),  // Header
+            Constraint::Min(0),     // Content (3 blocks)
+            Constraint::Length(3),  // Status
+        ])
+        .split(frame.area());
 
     render_header(frame, main_layout[0]);
-    render_original_text(app, frame, main_layout[1]);
-    render_summary_input(app, frame, main_layout[2]);
+
+    // Content layout: Left (Original) and Right (Answer + Evaluation)
+    let content_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50), // Left: Original text
+            Constraint::Percentage(50), // Right: Answer + Evaluation
+        ])
+        .split(main_layout[1]);
+
+    // Right side layout: Answer (top) and Evaluation (bottom)
+    let right_layout = if app.show_evaluation {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(50), // Answer block
+                Constraint::Percentage(50), // Evaluation block
+            ])
+            .split(content_layout[1])
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(100), // Answer block only
+            ])
+            .split(content_layout[1])
+    };
+
+    // Render blocks
+    render_original_text(app, frame, content_layout[0]);
+    render_summary_input(app, frame, right_layout[0]);
 
     if app.show_evaluation {
-        render_evaluation(app, frame, main_layout[3]);
-        render_status_bar(app, frame, main_layout[4]);
-    } else {
-        render_status_bar(app, frame, main_layout[3]);
+        render_evaluation(app, frame, right_layout[1]);
     }
+
+    render_status_bar(app, frame, main_layout[2]);
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
