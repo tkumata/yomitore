@@ -1,4 +1,12 @@
 use crate::api_client::ApiClient;
+use crate::stats::TrainingStats;
+
+#[derive(PartialEq, Clone, Copy)]
+pub enum ViewMode {
+    Normal,
+    MonthlyReport,
+    WeeklyReport,
+}
 
 /// Application state
 pub struct App {
@@ -15,10 +23,13 @@ pub struct App {
     pub cursor_position: usize,
     pub is_evaluating: bool,
     pub show_evaluation: bool,
+    pub view_mode: ViewMode,
+    pub stats: TrainingStats,
 }
 
 impl Default for App {
     fn default() -> Self {
+        let stats = TrainingStats::load().unwrap_or_else(|_| TrainingStats::new());
         Self {
             api_client: None,
             is_editing: false,
@@ -33,6 +44,8 @@ impl Default for App {
             cursor_position: 0,
             is_evaluating: false,
             show_evaluation: false,
+            view_mode: ViewMode::Normal,
+            stats,
         }
     }
 }

@@ -2,10 +2,12 @@ mod app;
 mod api_client;
 mod config;
 mod error;
+mod reports;
+mod stats;
 mod tui;
 mod ui;
 
-use crate::{api_client::ApiClient, app::App, error::AppError};
+use crate::{api_client::ApiClient, app::{App, ViewMode}, error::AppError};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::{env, time::Duration};
 
@@ -57,6 +59,12 @@ async fn main() -> Result<(), AppError> {
                                 app.show_evaluation = true;
                                 app.is_evaluating = false;
                                 app.status_message = "Evaluation complete. Press 'n' for next training.".to_string();
+
+                                // Save the result to stats
+                                app.stats.add_result(app.evaluation_passed);
+                                if let Err(e) = app.stats.save() {
+                                    eprintln!("Failed to save stats: {}", e);
+                                }
                             }
                             Err(e) => {
                                 app.evaluation_text = format!("Error: {}", e);
@@ -173,31 +181,55 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                 } else {
                     match key.code {
                         KeyCode::Char('i') | KeyCode::Enter => {
-                            if !app.show_evaluation {
+                            if !app.show_evaluation && app.view_mode == ViewMode::Normal {
                                 app.is_editing = true;
                                 app.status_message = "Editing Mode. Press 'Esc' to exit.".to_string();
                             }
                         }
                         KeyCode::Char('n') => {
-                            if app.show_evaluation {
+                            if app.show_evaluation && app.view_mode == ViewMode::Normal {
                                 return Ok(Some(AppAction::NextTraining));
+                            }
+                        }
+                        KeyCode::Char('m') => {
+                            // Toggle monthly report
+                            if app.view_mode == ViewMode::MonthlyReport {
+                                app.view_mode = ViewMode::Normal;
+                                app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                            } else {
+                                app.view_mode = ViewMode::MonthlyReport;
+                                app.status_message = "Monthly Report. Press 'm' to close.".to_string();
+                            }
+                        }
+                        KeyCode::Char('w') => {
+                            // Toggle weekly report
+                            if app.view_mode == ViewMode::WeeklyReport {
+                                app.view_mode = ViewMode::Normal;
+                                app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                            } else {
+                                app.view_mode = ViewMode::WeeklyReport;
+                                app.status_message = "Weekly Report. Press 'w' to close.".to_string();
                             }
                         }
                         KeyCode::Char('q') => {
                             app.should_quit = true;
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
-                                app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_add(1);
-                            } else {
-                                app.original_text_scroll = app.original_text_scroll.saturating_add(1);
+                            if app.view_mode == ViewMode::Normal {
+                                if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_add(1);
+                                } else {
+                                    app.original_text_scroll = app.original_text_scroll.saturating_add(1);
+                                }
                             }
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
-                            if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
-                                app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_sub(1);
-                            } else {
-                                app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
+                            if app.view_mode == ViewMode::Normal {
+                                if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_sub(1);
+                                } else {
+                                    app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
+                                }
                             }
                         }
                         _ => {}
