@@ -8,6 +8,7 @@
 
 ![Screenshot1](./docs/images/screenshot-01.png)
 ![Screenshot2](./docs/images/screenshot-02.png)
+![Screenshot3](./docs/images/Screenshot-03.png)
 
 ## 特徴
 
