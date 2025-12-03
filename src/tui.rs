@@ -1,6 +1,6 @@
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use ratatui::prelude::*;
 use std::io::{self, stdout, Stdout};
@@ -8,8 +8,24 @@ use std::io::{self, stdout, Stdout};
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
+/// Minimum required terminal dimensions
+const MIN_WIDTH: u16 = 150;
+const MIN_HEIGHT: u16 = 40;
+
 /// Initialize the terminal
 pub fn init() -> io::Result<Tui> {
+    // Check terminal size before initialization
+    let (width, height) = size()?;
+    if width < MIN_WIDTH || height < MIN_HEIGHT {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!(
+                "Terminal size too small. Required: {}x{}, Current: {}x{}\nPlease resize your terminal and try again.",
+                MIN_WIDTH, MIN_HEIGHT, width, height
+            ),
+        ));
+    }
+
     execute!(stdout(), EnterAlternateScreen)?;
     enable_raw_mode()?;
     let terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
