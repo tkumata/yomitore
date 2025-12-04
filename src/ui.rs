@@ -1,4 +1,4 @@
-use crate::app::{App, ViewMode};
+use crate::app::{App, ViewMode, MENU_OPTIONS};
 use crate::reports;
 use ratatui::{
     prelude::*,
@@ -234,11 +234,10 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let menu_options = vec![400, 720, 1440, 2880];
     let mut menu_text = String::new();
     menu_text.push_str("\n\n");
 
-    for (i, &count) in menu_options.iter().enumerate() {
+    for (i, &count) in MENU_OPTIONS.iter().enumerate() {
         if i == app.selected_menu_item {
             menu_text.push_str(&format!("  > {} 文字 <\n\n", count));
         } else {

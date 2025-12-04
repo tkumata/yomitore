@@ -24,7 +24,7 @@ pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
         api_key: Some(api_key.to_string()),
     };
     let toml_string = toml::to_string(&config)
-        .map_err(|_| AppError::IoError(std::io::Error::new(std::io::ErrorKind::Other, "Failed to serialize config")))?;
+        .map_err(|_| AppError::IoError(std::io::Error::other("Failed to serialize config")))?;
 
     let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(&config_path)?;
     
@@ -56,7 +56,7 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
     file.read_to_string(&mut contents)?;
 
     let config: Config = toml::from_str(&contents)
-        .map_err(|_| AppError::IoError(std::io::Error::new(std::io::ErrorKind::InvalidData, "Failed to parse config")))?;
+        .map_err(|_| AppError::IoError(std::io::Error::other("Failed to parse config")))?;
     
     Ok(config.api_key)
 }

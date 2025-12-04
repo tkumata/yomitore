@@ -66,7 +66,8 @@ impl ApiClient {
         }
     }
 
-    pub async fn generate_text(&self, prompt: &str) -> Result<String, AppError> {
+    /// Common helper for chat completion requests
+    async fn send_chat_request(&self, prompt: &str) -> Result<String, AppError> {
         let url = format!("{}{}", API_BASE_URL, CHAT_COMPLETIONS_ENDPOINT);
         let messages = vec![ChatMessage {
             role: "user",
@@ -100,44 +101,19 @@ impl ApiClient {
         }
     }
 
+    pub async fn generate_text(&self, prompt: &str) -> Result<String, AppError> {
+        self.send_chat_request(prompt).await
+    }
+
     pub async fn evaluate_summary(
         &self,
         original_text: &str,
         summary_text: &str,
     ) -> Result<String, AppError> {
-        let url = format!("{}{}", API_BASE_URL, CHAT_COMPLETIONS_ENDPOINT);
         let prompt_content = format!(
             "以下の『原文』を『要約文』は適切に要約できていますか？ 「はい」か「いいえ」で端的に答えた上で、簡単な解説を加えてください。\n\n# 原文\n{}\n\n# 要約文\n{}",
             original_text, summary_text
         );
-        let messages = vec![ChatMessage {
-            role: "user",
-            content: &prompt_content,
-        }];
-        let request_body = ChatRequest {
-            model: CHAT_MODEL,
-            messages,
-        };
-
-        let response = self.client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&request_body)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            return Err(AppError::ApiError(
-                response.error_for_status().unwrap_err(),
-            ));
-        }
-
-        let chat_response: ChatResponse = response.json().await?;
-
-        if let Some(choice) = chat_response.choices.into_iter().next() {
-            Ok(choice.message.content.unwrap_or_default())
-        } else {
-            Err(AppError::NoChoicesInResponse)
-        }
+        self.send_chat_request(&prompt_content).await
     }
 }
