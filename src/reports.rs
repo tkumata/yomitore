@@ -20,8 +20,8 @@ pub fn render_monthly_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Create heatmap
-    let heatmap = create_heatmap(&daily_stats, inner.width as usize, inner.height as usize);
+    // Create heatmap with badges
+    let heatmap = create_heatmap_with_badges(&daily_stats, stats, inner.width as usize, inner.height as usize);
     let paragraph = Paragraph::new(heatmap);
     frame.render_widget(paragraph, inner);
 }
@@ -37,13 +37,13 @@ pub fn render_weekly_report(frame: &mut Frame, area: Rect, stats: &TrainingStats
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Create bar chart
-    let chart = create_bar_chart(&weekly_stats, inner.width as usize, inner.height as usize);
+    // Create bar chart with badges
+    let chart = create_bar_chart_with_badges(&weekly_stats, stats, inner.width as usize, inner.height as usize);
     let paragraph = Paragraph::new(chart);
     frame.render_widget(paragraph, inner);
 }
 
-fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _height: usize) -> Text<'static> {
+fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stats: &TrainingStats, _width: usize, _height: usize) -> Text<'static> {
     let mut lines = Vec::new();
     let today = Local::now().date_naive();
 
@@ -52,6 +52,35 @@ fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _
         Span::styled("過去30日間の成績", Style::default().bold()),
     ]));
     lines.push(Line::from(""));
+
+    // Display badges
+    let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
+
+    // Consecutive streak badges (🔥)
+    if !consecutive_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
+        ];
+        for badge in consecutive_badges.iter().take(10) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    // Cumulative milestone badges (⭐)
+    if !cumulative_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
+        ];
+        for badge in cumulative_badges.iter().take(20) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    if !consecutive_badges.is_empty() || !cumulative_badges.is_empty() {
+        lines.push(Line::from(""));
+    }
 
     // Calculate grid dimensions (7 columns for days of week, multiple rows for weeks)
     let cols = 7;
@@ -155,7 +184,7 @@ fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _
     Text::from(lines)
 }
 
-fn create_bar_chart(weekly_stats: &[WeeklyStats], _width: usize, height: usize) -> Text<'static> {
+fn create_bar_chart_with_badges(weekly_stats: &[WeeklyStats], stats: &TrainingStats, _width: usize, height: usize) -> Text<'static> {
     let mut lines = Vec::new();
 
     // Title
@@ -164,6 +193,35 @@ fn create_bar_chart(weekly_stats: &[WeeklyStats], _width: usize, height: usize) 
     ]));
     lines.push(Line::from(""));
 
+    // Display badges
+    let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
+
+    // Consecutive streak badges (🔥)
+    if !consecutive_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
+        ];
+        for badge in consecutive_badges.iter().take(10) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    // Cumulative milestone badges (⭐)
+    if !cumulative_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
+        ];
+        for badge in cumulative_badges.iter().take(20) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    if !consecutive_badges.is_empty() || !cumulative_badges.is_empty() {
+        lines.push(Line::from(""));
+    }
+
     // Find max value for scaling
     let max_value = weekly_stats
         .iter()
@@ -171,7 +229,7 @@ fn create_bar_chart(weekly_stats: &[WeeklyStats], _width: usize, height: usize) 
         .max()
         .unwrap_or(1);
 
-    let chart_height = (height.saturating_sub(6)).max(8);
+    let chart_height = (height.saturating_sub(10)).max(8);
 
     // Display each week
     for stats in weekly_stats {
