@@ -74,7 +74,7 @@ impl TrainingStats {
             self.current_streak += 1;
 
             // Award consecutive streak badge (every 5, max 10 badges = 50 streak)
-            if self.current_streak % 5 == 0 && self.current_streak <= 50 {
+            if self.current_streak.is_multiple_of(5) && self.current_streak <= 50 {
                 let badge = Badge {
                     badge_type: BadgeType::ConsecutiveStreak(self.current_streak),
                     earned_at: Local::now(),
@@ -89,7 +89,7 @@ impl TrainingStats {
             let total_correct = self.results.iter().filter(|r| r.passed).count();
 
             // Award cumulative milestone badge (every 5, max 20 badges = 100 total)
-            if total_correct % 5 == 0 && total_correct <= 100 {
+            if total_correct.is_multiple_of(5) && total_correct <= 100 {
                 let badge = Badge {
                     badge_type: BadgeType::CumulativeMilestone(total_correct),
                     earned_at: Local::now(),
@@ -126,9 +126,9 @@ impl TrainingStats {
     /// Rebuild badges from historical data
     fn rebuild_badges_from_history(&mut self) {
         // Track all streak milestones and cumulative milestones reached
-        let mut max_streak = 0;
-        let mut current_streak = 0;
-        let mut total_correct = 0;
+        let mut max_streak: usize = 0;
+        let mut current_streak: usize = 0;
+        let mut total_correct: usize = 0;
 
         for result in &self.results {
             if result.passed {
@@ -137,7 +137,7 @@ impl TrainingStats {
                 max_streak = max_streak.max(current_streak);
 
                 // Award consecutive streak badges
-                if current_streak % 5 == 0 && current_streak <= 50 {
+                if current_streak.is_multiple_of(5) && current_streak <= 50 {
                     let badge = Badge {
                         badge_type: BadgeType::ConsecutiveStreak(current_streak),
                         earned_at: result.timestamp,
@@ -148,7 +148,7 @@ impl TrainingStats {
                 }
 
                 // Award cumulative milestone badges
-                if total_correct % 5 == 0 && total_correct <= 100 {
+                if total_correct.is_multiple_of(5) && total_correct <= 100 {
                     let badge = Badge {
                         badge_type: BadgeType::CumulativeMilestone(total_correct),
                         earned_at: result.timestamp,
@@ -219,14 +219,6 @@ impl TrainingStats {
         }
 
         weekly_stats
-    }
-
-    /// Get badges sorted by earned time
-    #[allow(dead_code)]
-    pub fn get_badges(&self) -> Vec<&Badge> {
-        let mut badges: Vec<&Badge> = self.badges.iter().collect();
-        badges.sort_by(|a, b| b.earned_at.cmp(&a.earned_at));
-        badges
     }
 
     /// Get badges grouped by type for display

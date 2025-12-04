@@ -17,8 +17,7 @@ pub fn init() -> io::Result<Tui> {
     // Check terminal size before initialization
     let (width, height) = size()?;
     if width < MIN_WIDTH || height < MIN_HEIGHT {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             format!(
                 "Terminal size too small. Required: {}x{}, Current: {}x{}\nPlease resize your terminal and try again.",
                 MIN_WIDTH, MIN_HEIGHT, width, height

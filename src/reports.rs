@@ -9,6 +9,40 @@ use std::collections::HashMap;
 const DAYS_IN_MONTH: usize = 30;
 const WEEKS_TO_SHOW: usize = 4;
 
+/// Renders badge section common to both reports
+fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
+
+    // Consecutive streak badges (🔥)
+    if !consecutive_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
+        ];
+        for badge in consecutive_badges.iter().take(10) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    // Cumulative milestone badges (⭐)
+    if !cumulative_badges.is_empty() {
+        let mut badge_line = vec![
+            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
+        ];
+        for badge in cumulative_badges.iter().take(20) {
+            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        }
+        lines.push(Line::from(badge_line));
+    }
+
+    if !consecutive_badges.is_empty() || !cumulative_badges.is_empty() {
+        lines.push(Line::from(""));
+    }
+
+    lines
+}
+
 pub fn render_monthly_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
     let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
 
@@ -53,38 +87,12 @@ fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stat
     ]));
     lines.push(Line::from(""));
 
-    // Display badges
-    let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
-
-    // Consecutive streak badges (🔥)
-    if !consecutive_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
-        ];
-        for badge in consecutive_badges.iter().take(10) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
-        }
-        lines.push(Line::from(badge_line));
-    }
-
-    // Cumulative milestone badges (⭐)
-    if !cumulative_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
-        ];
-        for badge in cumulative_badges.iter().take(20) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
-        }
-        lines.push(Line::from(badge_line));
-    }
-
-    if !consecutive_badges.is_empty() || !cumulative_badges.is_empty() {
-        lines.push(Line::from(""));
-    }
+    // Display badges using common function
+    lines.extend(render_badge_section(stats));
 
     // Calculate grid dimensions (7 columns for days of week, multiple rows for weeks)
     let cols = 7;
-    let rows = (DAYS_IN_MONTH + 6) / 7; // Round up to include partial weeks
+    let rows = DAYS_IN_MONTH.div_ceil(7); // Round up to include partial weeks
 
     // Create week day labels
     let weekdays = vec!["日", "月", "火", "水", "木", "金", "土"];
@@ -104,7 +112,7 @@ fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stat
 
     // Calculate number of days in grid
     let days_until_today = (today - grid_start).num_days() + 1;
-    let grid_rows = ((days_until_today as usize + 6) / 7).min(rows);
+    let grid_rows = (days_until_today as usize).div_ceil(7).min(rows);
 
     // Generate heatmap grid
     for row in 0..grid_rows {
@@ -130,7 +138,7 @@ fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stat
                 // Determine color intensity based on correct answers
                 let (symbol, style) = match (total, correct) {
                     (0, _) => ("--", Style::default().fg(Color::DarkGray)),
-                    (_, c) if c == 0 => ("##", Style::default().fg(Color::Red)),
+                    (_, 0) => ("##", Style::default().fg(Color::Red)),
                     (t, c) if c == t => {
                         // All correct - varying shades of green
                         if t >= 5 {
@@ -193,34 +201,8 @@ fn create_bar_chart_with_badges(weekly_stats: &[WeeklyStats], stats: &TrainingSt
     ]));
     lines.push(Line::from(""));
 
-    // Display badges
-    let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
-
-    // Consecutive streak badges (🔥)
-    if !consecutive_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
-        ];
-        for badge in consecutive_badges.iter().take(10) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
-        }
-        lines.push(Line::from(badge_line));
-    }
-
-    // Cumulative milestone badges (⭐)
-    if !cumulative_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
-        ];
-        for badge in cumulative_badges.iter().take(20) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
-        }
-        lines.push(Line::from(badge_line));
-    }
-
-    if !consecutive_badges.is_empty() || !cumulative_badges.is_empty() {
-        lines.push(Line::from(""));
-    }
+    // Display badges using common function
+    lines.extend(render_badge_section(stats));
 
     // Find max value for scaling
     let max_value = weekly_stats

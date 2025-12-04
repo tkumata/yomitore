@@ -7,7 +7,7 @@ mod stats;
 mod tui;
 mod ui;
 
-use crate::{api_client::ApiClient, app::{App, ViewMode}, error::AppError};
+use crate::{api_client::ApiClient, app::{App, ViewMode, MENU_OPTIONS}, error::AppError};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use std::{env, time::Duration};
 
@@ -31,12 +31,8 @@ async fn main() -> Result<(), AppError> {
                     app.status_message = "Generating text...".to_string();
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
-                    let generation_prompt = format!(
-                        "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
-                        app.character_count
-                    );
                     if let Some(client) = &app.api_client {
-                        match client.generate_text(&generation_prompt).await {
+                        match client.generate_text(&app.generate_text_prompt()).await {
                             Ok(text) => {
                                 app.original_text = text;
                                 app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
@@ -90,11 +86,7 @@ async fn main() -> Result<(), AppError> {
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
                     if let Some(client) = &app.api_client {
-                        let generation_prompt = format!(
-                            "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
-                            app.character_count
-                        );
-                        match client.generate_text(&generation_prompt).await {
+                        match client.generate_text(&app.generate_text_prompt()).await {
                             Ok(text) => {
                                 app.original_text = text;
                                 app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
@@ -121,29 +113,26 @@ enum AppAction {
 }
 
 async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
-    if event::poll(Duration::from_millis(100))? {
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Press {
+    if event::poll(Duration::from_millis(100))?
+        && let Event::Key(key) = event::read()?
+        && key.kind == KeyEventKind::Press {
                 // Handle menu navigation
                 if app.view_mode == ViewMode::Menu {
                     match key.code {
                         KeyCode::Up | KeyCode::Char('k') => {
                             if app.selected_menu_item > 0 {
                                 app.selected_menu_item -= 1;
-                                let menu_options = vec![400, 720, 1440, 2880];
-                                app.character_count = menu_options[app.selected_menu_item];
+                                app.character_count = MENU_OPTIONS[app.selected_menu_item];
                             }
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
-                            if app.selected_menu_item < 3 {
+                            if app.selected_menu_item < MENU_OPTIONS.len() - 1 {
                                 app.selected_menu_item += 1;
-                                let menu_options = vec![400, 720, 1440, 2880];
-                                app.character_count = menu_options[app.selected_menu_item];
+                                app.character_count = MENU_OPTIONS[app.selected_menu_item];
                             }
                         }
                         KeyCode::Enter => {
-                            let menu_options = vec![400, 720, 1440, 2880];
-                            app.character_count = menu_options[app.selected_menu_item];
+                            app.character_count = MENU_OPTIONS[app.selected_menu_item];
                             return Ok(Some(AppAction::StartTraining));
                         }
                         KeyCode::Char('m') => {
@@ -241,14 +230,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         KeyCode::Char('m') => {
                             // Toggle monthly report
                             if app.view_mode == ViewMode::MonthlyReport {
-                                // Return to menu if no training has started, otherwise return to Normal mode
-                                if app.original_text == "Authenticating..." || app.original_text.starts_with("Failed to generate") {
-                                    app.view_mode = ViewMode::Menu;
-                                    app.status_message = "Select character count and press Enter to start".to_string();
-                                } else {
-                                    app.view_mode = ViewMode::Normal;
-                                    app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
-                                }
+                                app.return_from_report();
                             } else {
                                 app.view_mode = ViewMode::MonthlyReport;
                                 app.status_message = "Monthly Report. Press 'm' to close.".to_string();
@@ -257,14 +239,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         KeyCode::Char('w') => {
                             // Toggle weekly report
                             if app.view_mode == ViewMode::WeeklyReport {
-                                // Return to menu if no training has started, otherwise return to Normal mode
-                                if app.original_text == "Authenticating..." || app.original_text.starts_with("Failed to generate") {
-                                    app.view_mode = ViewMode::Menu;
-                                    app.status_message = "Select character count and press Enter to start".to_string();
-                                } else {
-                                    app.view_mode = ViewMode::Normal;
-                                    app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
-                                }
+                                app.return_from_report();
                             } else {
                                 app.view_mode = ViewMode::WeeklyReport;
                                 app.status_message = "Weekly Report. Press 'w' to close.".to_string();
@@ -294,24 +269,21 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         _ => {}
                     }
                 }
-            }
         }
-    }
     Ok(None)
 }
 
 async fn authenticate() -> Result<ApiClient, AppError> {
-    if let Some(key) = config::load_api_key()? {
-        if !key.is_empty() {
+    if let Some(key) = config::load_api_key()?
+        && !key.is_empty() {
             let client = ApiClient::new(key);
             if client.validate_credentials().await.is_ok() {
                 return Ok(client);
             }
         }
-    }
 
-    if let Ok(key) = env::var("GROQ_API_KEY") {
-        if !key.is_empty() {
+    if let Ok(key) = env::var("GROQ_API_KEY")
+        && !key.is_empty() {
             let client = ApiClient::new(key.clone());
             if client.validate_credentials().await.is_ok() {
                 if config::save_api_key(&key).is_err() {
@@ -320,6 +292,5 @@ async fn authenticate() -> Result<ApiClient, AppError> {
                 return Ok(client);
             }
         }
-    }
     Err(AppError::InvalidApiKey)
 }

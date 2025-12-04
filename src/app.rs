@@ -9,6 +9,9 @@ pub enum ViewMode {
     WeeklyReport,
 }
 
+/// Menu options for character count selection
+pub const MENU_OPTIONS: [u16; 4] = [400, 720, 1440, 2880];
+
 /// Application state
 pub struct App {
     pub api_client: Option<ApiClient>,
@@ -51,6 +54,32 @@ impl Default for App {
             stats,
             character_count: 400,
             selected_menu_item: 0,
+        }
+    }
+}
+
+impl App {
+    /// Generate the text generation prompt based on current character count
+    pub fn generate_text_prompt(&self) -> String {
+        format!(
+            "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
+            self.character_count
+        )
+    }
+
+    /// Check if the current state indicates no training has started
+    pub fn has_training_started(&self) -> bool {
+        self.original_text != "Authenticating..." && !self.original_text.starts_with("Failed to generate")
+    }
+
+    /// Return to the appropriate view mode (Menu if no training, Normal otherwise)
+    pub fn return_from_report(&mut self) {
+        if self.has_training_started() {
+            self.view_mode = ViewMode::Normal;
+            self.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+        } else {
+            self.view_mode = ViewMode::Menu;
+            self.status_message = "Select character count and press Enter to start".to_string();
         }
     }
 }
