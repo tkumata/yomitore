@@ -146,6 +146,16 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                             app.character_count = menu_options[app.selected_menu_item];
                             return Ok(Some(AppAction::StartTraining));
                         }
+                        KeyCode::Char('m') => {
+                            // Show monthly report from menu
+                            app.view_mode = ViewMode::MonthlyReport;
+                            app.status_message = "Monthly Report. Press 'm' to close.".to_string();
+                        }
+                        KeyCode::Char('w') => {
+                            // Show weekly report from menu
+                            app.view_mode = ViewMode::WeeklyReport;
+                            app.status_message = "Weekly Report. Press 'w' to close.".to_string();
+                        }
                         KeyCode::Char('q') => {
                             app.should_quit = true;
                         }
@@ -231,8 +241,14 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         KeyCode::Char('m') => {
                             // Toggle monthly report
                             if app.view_mode == ViewMode::MonthlyReport {
-                                app.view_mode = ViewMode::Normal;
-                                app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                                // Return to menu if no training has started, otherwise return to Normal mode
+                                if app.original_text == "Authenticating..." || app.original_text.starts_with("Failed to generate") {
+                                    app.view_mode = ViewMode::Menu;
+                                    app.status_message = "Select character count and press Enter to start".to_string();
+                                } else {
+                                    app.view_mode = ViewMode::Normal;
+                                    app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                                }
                             } else {
                                 app.view_mode = ViewMode::MonthlyReport;
                                 app.status_message = "Monthly Report. Press 'm' to close.".to_string();
@@ -241,8 +257,14 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         KeyCode::Char('w') => {
                             // Toggle weekly report
                             if app.view_mode == ViewMode::WeeklyReport {
-                                app.view_mode = ViewMode::Normal;
-                                app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                                // Return to menu if no training has started, otherwise return to Normal mode
+                                if app.original_text == "Authenticating..." || app.original_text.starts_with("Failed to generate") {
+                                    app.view_mode = ViewMode::Menu;
+                                    app.status_message = "Select character count and press Enter to start".to_string();
+                                } else {
+                                    app.view_mode = ViewMode::Normal;
+                                    app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                                }
                             } else {
                                 app.view_mode = ViewMode::WeeklyReport;
                                 app.status_message = "Weekly Report. Press 'w' to close.".to_string();
