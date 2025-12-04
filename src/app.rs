@@ -3,6 +3,7 @@ use crate::stats::TrainingStats;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ViewMode {
+    Menu,
     Normal,
     MonthlyReport,
     WeeklyReport,
@@ -25,6 +26,8 @@ pub struct App {
     pub show_evaluation: bool,
     pub view_mode: ViewMode,
     pub stats: TrainingStats,
+    pub character_count: u16,
+    pub selected_menu_item: usize,
 }
 
 impl Default for App {
@@ -38,14 +41,16 @@ impl Default for App {
             evaluation_text: String::new(),
             evaluation_text_scroll: 0,
             evaluation_passed: false,
-            status_message: "Authenticating... please wait.".to_string(),
+            status_message: "Select character count and press Enter to start".to_string(),
             should_quit: false,
             summary_input: String::new(),
             cursor_position: 0,
             is_evaluating: false,
             show_evaluation: false,
-            view_mode: ViewMode::Normal,
+            view_mode: ViewMode::Menu,
             stats,
+            character_count: 400,
+            selected_menu_item: 0,
         }
     }
 }

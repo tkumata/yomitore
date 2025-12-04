@@ -20,31 +20,34 @@ async fn main() -> Result<(), AppError> {
 
     let mut tui = tui::init()?;
 
-    if app.api_client.is_some() {
-        app.status_message = "Generating text...".to_string();
-        tui.draw(|frame| ui::render(&mut app, frame))?;
-
-        let generation_prompt = "日本語の公的文書のようなお堅い文章を400文字程度で生成してください。";
-        if let Some(client) = &app.api_client {
-            match client.generate_text(generation_prompt).await {
-                Ok(text) => {
-                    app.original_text = text;
-                    app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
-                }
-                Err(e) => {
-                    app.original_text = format!("Failed to generate text: {}", e);
-                    app.status_message = "Error".to_string();
-                }
-            }
-        }
-    }
-
     // Main loop
     while !app.should_quit {
         tui.draw(|frame| ui::render(&mut app, frame))?;
 
         if let Some(result) = handle_events(&mut app).await? {
             match result {
+                AppAction::StartTraining => {
+                    app.view_mode = ViewMode::Normal;
+                    app.status_message = "Generating text...".to_string();
+                    tui.draw(|frame| ui::render(&mut app, frame))?;
+
+                    let generation_prompt = format!(
+                        "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
+                        app.character_count
+                    );
+                    if let Some(client) = &app.api_client {
+                        match client.generate_text(&generation_prompt).await {
+                            Ok(text) => {
+                                app.original_text = text;
+                                app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                            }
+                            Err(e) => {
+                                app.original_text = format!("Failed to generate text: {}", e);
+                                app.status_message = "Error".to_string();
+                            }
+                        }
+                    }
+                }
                 AppAction::Evaluate => {
                     app.is_evaluating = true;
                     app.status_message = "Evaluating your summary...".to_string();
@@ -87,8 +90,11 @@ async fn main() -> Result<(), AppError> {
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
                     if let Some(client) = &app.api_client {
-                        let generation_prompt = "日本語の公的文書のようなお堅い文章を400文字程度で生成してください。";
-                        match client.generate_text(generation_prompt).await {
+                        let generation_prompt = format!(
+                            "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
+                            app.character_count
+                        );
+                        match client.generate_text(&generation_prompt).await {
                             Ok(text) => {
                                 app.original_text = text;
                                 app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
@@ -111,12 +117,43 @@ async fn main() -> Result<(), AppError> {
 enum AppAction {
     Evaluate,
     NextTraining,
+    StartTraining,
 }
 
 async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
     if event::poll(Duration::from_millis(100))? {
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Press {
+                // Handle menu navigation
+                if app.view_mode == ViewMode::Menu {
+                    match key.code {
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            if app.selected_menu_item > 0 {
+                                app.selected_menu_item -= 1;
+                                let menu_options = vec![400, 720, 1440, 2880];
+                                app.character_count = menu_options[app.selected_menu_item];
+                            }
+                        }
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if app.selected_menu_item < 3 {
+                                app.selected_menu_item += 1;
+                                let menu_options = vec![400, 720, 1440, 2880];
+                                app.character_count = menu_options[app.selected_menu_item];
+                            }
+                        }
+                        KeyCode::Enter => {
+                            let menu_options = vec![400, 720, 1440, 2880];
+                            app.character_count = menu_options[app.selected_menu_item];
+                            return Ok(Some(AppAction::StartTraining));
+                        }
+                        KeyCode::Char('q') => {
+                            app.should_quit = true;
+                        }
+                        _ => {}
+                    }
+                    return Ok(None);
+                }
+
                 if app.is_editing {
                     match key.code {
                         KeyCode::Esc => {

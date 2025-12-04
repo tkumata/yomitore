@@ -9,6 +9,10 @@ use ratatui::{
 pub fn render(app: &mut App, frame: &mut Frame) {
     // Check if we should show a report instead of the normal view
     match app.view_mode {
+        ViewMode::Menu => {
+            render_menu_view(app, frame);
+            return;
+        }
         ViewMode::MonthlyReport => {
             render_monthly_report_view(app, frame);
             return;
@@ -190,5 +194,63 @@ fn render_weekly_report_view(app: &App, frame: &mut Frame) {
 
     render_header(frame, layout[0]);
     reports::render_weekly_report(frame, layout[1], &app.stats);
+    render_status_bar(app, frame, layout[2]);
+}
+
+fn render_menu_view(app: &App, frame: &mut Frame) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),      // Header
+            Constraint::Min(0),         // Menu
+            Constraint::Length(3),      // Status
+        ])
+        .split(frame.area());
+
+    render_header(frame, layout[0]);
+
+    // Center the menu box
+    let menu_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Length(16),
+            Constraint::Percentage(20),
+        ])
+        .split(layout[1])[1];
+
+    let menu_area = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Percentage(40),
+            Constraint::Percentage(30),
+        ])
+        .split(menu_area)[1];
+
+    let block = Block::default()
+        .title("文字数を選択してください")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let menu_options = vec![400, 720, 1440, 2880];
+    let mut menu_text = String::new();
+    menu_text.push_str("\n\n");
+
+    for (i, &count) in menu_options.iter().enumerate() {
+        if i == app.selected_menu_item {
+            menu_text.push_str(&format!("  > {} 文字 <\n\n", count));
+        } else {
+            menu_text.push_str(&format!("    {} 文字\n\n", count));
+        }
+    }
+
+    let paragraph = Paragraph::new(menu_text)
+        .block(block)
+        .alignment(Alignment::Center)
+        .style(Style::default());
+
+    frame.render_widget(paragraph, menu_area);
     render_status_bar(app, frame, layout[2]);
 }
