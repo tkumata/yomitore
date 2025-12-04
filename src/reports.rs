@@ -65,23 +65,34 @@ fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _
     }
     lines.push(Line::from(header));
 
+    // Build a grid structure: rows x 7 columns
+    // Start from 30 days ago and go forward to today
+    let start_date = today - chrono::Duration::days((DAYS_IN_MONTH - 1) as i64);
+
+    // Find the Sunday on or before start_date to align the grid properly
+    let start_weekday = start_date.weekday().num_days_from_sunday();
+    let grid_start = start_date - chrono::Duration::days(start_weekday as i64);
+
+    // Calculate number of days in grid
+    let days_until_today = (today - grid_start).num_days() + 1;
+    let grid_rows = ((days_until_today as usize + 6) / 7).min(rows);
+
     // Generate heatmap grid
-    for row in 0..rows {
+    for row in 0..grid_rows {
         let mut line_spans = Vec::new();
 
         // Week label
-        let week_offset = rows - row - 1;
-        let date = today - chrono::Duration::days((week_offset * 7) as i64);
-        line_spans.push(Span::raw(format!("W{:02} ", date.iso_week().week())));
+        let row_start_date = grid_start + chrono::Duration::days((row * 7) as i64);
+        line_spans.push(Span::raw(format!("W{:02} ", row_start_date.iso_week().week())));
 
         for col in 0..cols {
-            let days_ago = (week_offset * 7) + col;
-            if days_ago >= DAYS_IN_MONTH {
-                line_spans.push(Span::raw("   "));
+            let date = row_start_date + chrono::Duration::days(col as i64);
+
+            // Check if date is in our range (from start_date to today)
+            if date < start_date || date > today {
+                line_spans.push(Span::raw("    "));
                 continue;
             }
-
-            let date = today - chrono::Duration::days(days_ago as i64);
 
             if let Some(stats) = daily_stats.get(&date) {
                 let total = stats.total();
@@ -89,34 +100,34 @@ fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _
 
                 // Determine color intensity based on correct answers
                 let (symbol, style) = match (total, correct) {
-                    (0, _) => ("□", Style::default().fg(Color::DarkGray)),
-                    (_, c) if c == 0 => ("■", Style::default().fg(Color::Red)),
+                    (0, _) => ("--", Style::default().fg(Color::DarkGray)),
+                    (_, c) if c == 0 => ("##", Style::default().fg(Color::Red)),
                     (t, c) if c == t => {
                         // All correct - varying shades of green
                         if t >= 5 {
-                            ("■", Style::default().fg(Color::Green).bold())
+                            ("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold())
                         } else if t >= 3 {
-                            ("■", Style::default().fg(Color::Green))
+                            ("##", Style::default().fg(Color::Green))
                         } else {
-                            ("■", Style::default().fg(Color::LightGreen))
+                            ("##", Style::default().fg(Color::LightGreen))
                         }
                     }
                     (t, c) => {
                         // Mixed results
                         let ratio = c as f64 / t as f64;
                         if ratio >= 0.7 {
-                            ("■", Style::default().fg(Color::LightGreen))
+                            ("##", Style::default().fg(Color::LightGreen))
                         } else if ratio >= 0.4 {
-                            ("■", Style::default().fg(Color::Yellow))
+                            ("##", Style::default().fg(Color::Yellow))
                         } else {
-                            ("■", Style::default().fg(Color::Red))
+                            ("##", Style::default().fg(Color::Red))
                         }
                     }
                 };
 
                 line_spans.push(Span::styled(format!(" {} ", symbol), style));
             } else {
-                line_spans.push(Span::raw(" □ "));
+                line_spans.push(Span::raw(" -- "));
             }
         }
 
@@ -127,17 +138,17 @@ fn create_heatmap(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("凡例: "),
-        Span::styled("□", Style::default().fg(Color::DarkGray)),
+        Span::styled("--", Style::default().fg(Color::DarkGray)),
         Span::raw(" なし  "),
-        Span::styled("■", Style::default().fg(Color::Red)),
+        Span::styled("##", Style::default().fg(Color::Red)),
         Span::raw(" 全不正解  "),
-        Span::styled("■", Style::default().fg(Color::Yellow)),
+        Span::styled("##", Style::default().fg(Color::Yellow)),
         Span::raw(" 混在  "),
-        Span::styled("■", Style::default().fg(Color::LightGreen)),
+        Span::styled("##", Style::default().fg(Color::LightGreen)),
         Span::raw(" 良  "),
-        Span::styled("■", Style::default().fg(Color::Green)),
+        Span::styled("##", Style::default().fg(Color::Green)),
         Span::raw(" 優  "),
-        Span::styled("■", Style::default().fg(Color::Green).bold()),
+        Span::styled("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold()),
         Span::raw(" 秀"),
     ]));
 
