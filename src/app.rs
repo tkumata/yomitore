@@ -5,8 +5,8 @@ use crate::stats::TrainingStats;
 pub enum ViewMode {
     Menu,
     Normal,
-    MonthlyReport,
-    WeeklyReport,
+    Report,
+    Help,
 }
 
 /// Menu options for character count selection
@@ -31,6 +31,7 @@ pub struct App {
     pub stats: TrainingStats,
     pub character_count: u16,
     pub selected_menu_item: usize,
+    pub help_scroll: u16,
 }
 
 impl Default for App {
@@ -54,6 +55,7 @@ impl Default for App {
             stats,
             character_count: 400,
             selected_menu_item: 0,
+            help_scroll: 0,
         }
     }
 }

@@ -43,52 +43,72 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     lines
 }
 
-pub fn render_monthly_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
-    let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
-
+pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
     let block = Block::default()
-        .title("月次レポート (m: 閉じる)")
+        .title("レポート (r: 閉じる)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Create heatmap with badges
-    let heatmap = create_heatmap_with_badges(&daily_stats, stats, inner.width as usize, inner.height as usize);
+    // Split vertically: badges on top, reports below
+    let vertical_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(4),      // Badges (4 lines)
+            Constraint::Min(0),         // Reports
+        ])
+        .split(inner);
+
+    // Render badges block at the top
+    let badge_block = Block::default()
+        .title("バッジ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    let badge_inner = badge_block.inner(vertical_layout[0]);
+    frame.render_widget(badge_block, vertical_layout[0]);
+    let badge_content = Text::from(render_badge_section(stats));
+    let badge_paragraph = Paragraph::new(badge_content);
+    frame.render_widget(badge_paragraph, badge_inner);
+
+    // Split the bottom area horizontally: left for monthly, right for weekly
+    let horizontal_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .split(vertical_layout[1]);
+
+    // Render monthly report on the left
+    let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
+    let monthly_block = Block::default()
+        .title("月次 (過去30日)")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+    let monthly_inner = monthly_block.inner(horizontal_layout[0]);
+    frame.render_widget(monthly_block, horizontal_layout[0]);
+    let heatmap = create_heatmap_without_badges(&daily_stats, monthly_inner.width as usize, monthly_inner.height as usize);
     let paragraph = Paragraph::new(heatmap);
-    frame.render_widget(paragraph, inner);
-}
+    frame.render_widget(paragraph, monthly_inner);
 
-pub fn render_weekly_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
+    // Render weekly report on the right
     let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW);
-
-    let block = Block::default()
-        .title("週次レポート (w: 閉じる)")
+    let weekly_block = Block::default()
+        .title("週次 (過去4週)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Magenta));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    // Create bar chart with badges
-    let chart = create_bar_chart_with_badges(&weekly_stats, stats, inner.width as usize, inner.height as usize);
+    let weekly_inner = weekly_block.inner(horizontal_layout[1]);
+    frame.render_widget(weekly_block, horizontal_layout[1]);
+    let chart = create_bar_chart_without_badges(&weekly_stats, weekly_inner.width as usize, weekly_inner.height as usize);
     let paragraph = Paragraph::new(chart);
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(paragraph, weekly_inner);
 }
 
-fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stats: &TrainingStats, _width: usize, _height: usize) -> Text<'static> {
+fn create_heatmap_without_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _height: usize) -> Text<'static> {
     let mut lines = Vec::new();
     let today = Local::now().date_naive();
-
-    // Title
-    lines.push(Line::from(vec![
-        Span::styled("過去30日間の成績", Style::default().bold()),
-    ]));
-    lines.push(Line::from(""));
-
-    // Display badges using common function
-    lines.extend(render_badge_section(stats));
 
     // Calculate grid dimensions (7 columns for days of week, multiple rows for weeks)
     let cols = 7;
@@ -192,17 +212,8 @@ fn create_heatmap_with_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, stat
     Text::from(lines)
 }
 
-fn create_bar_chart_with_badges(weekly_stats: &[WeeklyStats], stats: &TrainingStats, _width: usize, height: usize) -> Text<'static> {
+fn create_bar_chart_without_badges(weekly_stats: &[WeeklyStats], _width: usize, height: usize) -> Text<'static> {
     let mut lines = Vec::new();
-
-    // Title
-    lines.push(Line::from(vec![
-        Span::styled("過去4週間の成績", Style::default().bold()),
-    ]));
-    lines.push(Line::from(""));
-
-    // Display badges using common function
-    lines.extend(render_badge_section(stats));
 
     // Find max value for scaling
     let max_value = weekly_stats
@@ -211,7 +222,7 @@ fn create_bar_chart_with_badges(weekly_stats: &[WeeklyStats], stats: &TrainingSt
         .max()
         .unwrap_or(1);
 
-    let chart_height = (height.saturating_sub(10)).max(8);
+    let chart_height = (height.saturating_sub(6)).max(8);
 
     // Display each week
     for stats in weekly_stats {

@@ -1,4 +1,5 @@
 use crate::app::{App, ViewMode, MENU_OPTIONS};
+use crate::help;
 use crate::reports;
 use ratatui::{
     prelude::*,
@@ -13,12 +14,12 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             render_menu_view(app, frame);
             return;
         }
-        ViewMode::MonthlyReport => {
-            render_monthly_report_view(app, frame);
+        ViewMode::Report => {
+            render_report_view(app, frame);
             return;
         }
-        ViewMode::WeeklyReport => {
-            render_weekly_report_view(app, frame);
+        ViewMode::Help => {
+            render_help_view(app, frame);
             return;
         }
         ViewMode::Normal => {
@@ -160,14 +161,14 @@ fn render_evaluation(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::TOP);
-    let status_text = format!(" {} | m: 月次 | w: 週次 | q: 終了 ", app.status_message);
+    let status_text = format!(" {} | r: レポート | h: ヘルプ | q: 終了 ", app.status_message);
     let paragraph = Paragraph::new(status_text)
         .alignment(Alignment::Right)
         .block(block);
     frame.render_widget(paragraph, area);
 }
 
-fn render_monthly_report_view(app: &App, frame: &mut Frame) {
+fn render_report_view(app: &App, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -178,22 +179,7 @@ fn render_monthly_report_view(app: &App, frame: &mut Frame) {
         .split(frame.area());
 
     render_header(frame, layout[0]);
-    reports::render_monthly_report(frame, layout[1], &app.stats);
-    render_status_bar(app, frame, layout[2]);
-}
-
-fn render_weekly_report_view(app: &App, frame: &mut Frame) {
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),      // Header
-            Constraint::Min(0),         // Report
-            Constraint::Length(3),      // Status
-        ])
-        .split(frame.area());
-
-    render_header(frame, layout[0]);
-    reports::render_weekly_report(frame, layout[1], &app.stats);
+    reports::render_unified_report(frame, layout[1], &app.stats);
     render_status_bar(app, frame, layout[2]);
 }
 
@@ -251,5 +237,40 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .style(Style::default());
 
     frame.render_widget(paragraph, menu_area);
+    render_status_bar(app, frame, layout[2]);
+}
+
+fn render_help_view(app: &App, frame: &mut Frame) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),      // Header
+            Constraint::Min(0),         // Help content
+            Constraint::Length(3),      // Status
+        ])
+        .split(frame.area());
+
+    render_header(frame, layout[0]);
+
+    let help_content = help::get_help_content();
+    let help_text = if help_content.is_empty() {
+        "ヘルプファイルが見つかりません。\n\ndocs/HELP.md を作成してください。".to_string()
+    } else {
+        help_content.to_string()
+    };
+
+    let block = Block::default()
+        .title("ヘルプ (↑/↓ or j/k: スクロール, h: 閉じる)")
+        .title_alignment(Alignment::Center)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+
+    let paragraph = Paragraph::new(help_text)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((app.help_scroll, 0))
+        .style(Style::default());
+
+    frame.render_widget(paragraph, layout[1]);
     render_status_bar(app, frame, layout[2]);
 }

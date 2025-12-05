@@ -2,6 +2,7 @@ mod app;
 mod api_client;
 mod config;
 mod error;
+mod help;
 mod reports;
 mod stats;
 mod tui;
@@ -135,15 +136,15 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                             app.character_count = MENU_OPTIONS[app.selected_menu_item];
                             return Ok(Some(AppAction::StartTraining));
                         }
-                        KeyCode::Char('m') => {
-                            // Show monthly report from menu
-                            app.view_mode = ViewMode::MonthlyReport;
-                            app.status_message = "Monthly Report. Press 'm' to close.".to_string();
+                        KeyCode::Char('r') => {
+                            // Show report from menu
+                            app.view_mode = ViewMode::Report;
+                            app.status_message = "Report. Press 'r' to close.".to_string();
                         }
-                        KeyCode::Char('w') => {
-                            // Show weekly report from menu
-                            app.view_mode = ViewMode::WeeklyReport;
-                            app.status_message = "Weekly Report. Press 'w' to close.".to_string();
+                        KeyCode::Char('h') => {
+                            // Show help from menu
+                            app.view_mode = ViewMode::Help;
+                            app.status_message = "Help. Press 'h' to close.".to_string();
                         }
                         KeyCode::Char('q') => {
                             app.should_quit = true;
@@ -215,6 +216,41 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         _ => {}
                     }
                 } else {
+                    // Handle Report view
+                    if app.view_mode == ViewMode::Report {
+                        match key.code {
+                            KeyCode::Char('r') => {
+                                app.return_from_report();
+                            }
+                            KeyCode::Char('q') => {
+                                app.should_quit = true;
+                            }
+                            _ => {}
+                        }
+                        return Ok(None);
+                    }
+
+                    // Handle Help view
+                    if app.view_mode == ViewMode::Help {
+                        match key.code {
+                            KeyCode::Char('h') => {
+                                app.return_from_report();
+                                app.help_scroll = 0;
+                            }
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                app.help_scroll = app.help_scroll.saturating_add(1);
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                app.help_scroll = app.help_scroll.saturating_sub(1);
+                            }
+                            KeyCode::Char('q') => {
+                                app.should_quit = true;
+                            }
+                            _ => {}
+                        }
+                        return Ok(None);
+                    }
+
                     match key.code {
                         KeyCode::Char('i') | KeyCode::Enter => {
                             if !app.show_evaluation && app.view_mode == ViewMode::Normal {
@@ -227,22 +263,23 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                                 return Ok(Some(AppAction::NextTraining));
                             }
                         }
-                        KeyCode::Char('m') => {
-                            // Toggle monthly report
-                            if app.view_mode == ViewMode::MonthlyReport {
+                        KeyCode::Char('r') => {
+                            // Toggle report
+                            if app.view_mode == ViewMode::Report {
                                 app.return_from_report();
                             } else {
-                                app.view_mode = ViewMode::MonthlyReport;
-                                app.status_message = "Monthly Report. Press 'm' to close.".to_string();
+                                app.view_mode = ViewMode::Report;
+                                app.status_message = "Report. Press 'r' to close.".to_string();
                             }
                         }
-                        KeyCode::Char('w') => {
-                            // Toggle weekly report
-                            if app.view_mode == ViewMode::WeeklyReport {
+                        KeyCode::Char('h') => {
+                            // Toggle help
+                            if app.view_mode == ViewMode::Help {
                                 app.return_from_report();
+                                app.help_scroll = 0;
                             } else {
-                                app.view_mode = ViewMode::WeeklyReport;
-                                app.status_message = "Weekly Report. Press 'w' to close.".to_string();
+                                app.view_mode = ViewMode::Help;
+                                app.status_message = "Help. Press 'h' to close.".to_string();
                             }
                         }
                         KeyCode::Char('q') => {
