@@ -37,6 +37,7 @@ const API_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
 const MODELS_ENDPOINT: &str = "/models";
 const CHAT_MODEL: &str = "openai/gpt-oss-120b";
+const API_TIMEOUT_SECS: u64 = 60; // API request timeout in seconds
 
 pub struct ApiClient {
     client: reqwest::Client,
@@ -45,8 +46,13 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(api_key: String) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(API_TIMEOUT_SECS))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
         Self {
-            client: reqwest::Client::new(),
+            client,
             api_key,
         }
     }

@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 const DAYS_IN_MONTH: usize = 30;
 const WEEKS_TO_SHOW: usize = 4;
+/// Maximum number of badges to display in report
+const MAX_BADGES_DISPLAY: usize = 20;
 
 /// Renders badge section common to both reports
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
@@ -30,7 +32,7 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
         let mut badge_line = vec![
             Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
         ];
-        for badge in cumulative_badges.iter().take(20) {
+        for badge in cumulative_badges.iter().take(MAX_BADGES_DISPLAY) {
             badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
         }
         lines.push(Line::from(badge_line));

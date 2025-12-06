@@ -13,6 +13,12 @@ use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers
 use rat_text::event::HandleEvent;
 use std::{env, time::Duration};
 
+/// Event polling interval in milliseconds
+const EVENT_POLL_INTERVAL_MS: u64 = 100;
+
+/// Overlay size as percentage of screen
+const OVERLAY_SIZE_PERCENT: u16 = 75;
+
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     let mut app = App::default();
@@ -73,6 +79,7 @@ async fn main() -> Result<(), AppError> {
                                 // Save the result to stats
                                 app.stats.add_result(app.evaluation_passed);
                                 if let Err(e) = app.stats.save() {
+                                    app.status_message = format!("Warning: Failed to save stats: {}", e);
                                     eprintln!("Failed to save stats: {}", e);
                                 }
                             }
@@ -126,7 +133,7 @@ enum AppAction {
 }
 
 async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
-    if event::poll(Duration::from_millis(100))? {
+    if event::poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))? {
         let ev = event::read()?;
         if let Event::Key(key) = ev {
             if key.kind != KeyEventKind::Press {
@@ -274,11 +281,15 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                             if app.view_mode == ViewMode::Normal {
                                 if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
                                     // Scroll evaluation overlay with bounds checking
-                                    let max_scroll = calculate_max_scroll(&app.evaluation_text, 20); // Approximate height
+                                    // Calculate visible height: overlay percent of screen minus borders and headers
+                                    let visible_height = (app.terminal_height * OVERLAY_SIZE_PERCENT / 100).saturating_sub(4);
+                                    let max_scroll = calculate_max_scroll(&app.evaluation_text, visible_height);
                                     app.evaluation_overlay_scroll = app.evaluation_overlay_scroll.saturating_add(1).min(max_scroll);
                                 } else {
                                     // Scroll original text with bounds checking
-                                    let max_scroll = calculate_max_scroll(&app.original_text, 20); // Approximate height
+                                    // Calculate visible height: half screen minus header and status bar
+                                    let visible_height = (app.terminal_height / 2).saturating_sub(3);
+                                    let max_scroll = calculate_max_scroll(&app.original_text, visible_height);
                                     app.original_text_scroll = app.original_text_scroll.saturating_add(1).min(max_scroll);
                                 }
                             }

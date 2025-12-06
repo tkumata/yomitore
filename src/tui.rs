@@ -9,8 +9,8 @@ use std::io::{self, stdout, Stdout};
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 
 /// Minimum required terminal dimensions
-const MIN_WIDTH: u16 = 150;
-const MIN_HEIGHT: u16 = 40;
+const MIN_WIDTH: u16 = 100;
+const MIN_HEIGHT: u16 = 30;
 
 /// Initialize the terminal
 pub fn init() -> io::Result<Tui> {

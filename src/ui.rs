@@ -7,8 +7,18 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+/// Overlay size as percentage of screen
+const OVERLAY_SIZE_PERCENT: u16 = 75;
+/// Minimum overlay dimensions
+const MIN_OVERLAY_WIDTH: u16 = 40;
+const MIN_OVERLAY_HEIGHT: u16 = 10;
+
 /// Renders the user interface widgets.
 pub fn render(app: &mut App, frame: &mut Frame) {
+    // Update terminal dimensions
+    app.terminal_width = frame.area().width;
+    app.terminal_height = frame.area().height;
+
     // Check if we should show a report instead of the normal view
     match app.view_mode {
         ViewMode::Menu => {
@@ -61,11 +71,10 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_status_bar(app, frame, main_layout[2]);
 
     // Set cursor position if editing
-    if app.is_editing {
-        if let Some((cx, cy)) = app.text_area_state.screen_cursor() {
+    if app.is_editing
+        && let Some((cx, cy)) = app.text_area_state.screen_cursor() {
             frame.set_cursor_position((cx, cy));
         }
-    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
@@ -89,9 +98,6 @@ fn render_original_text(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
     let title = "あなたの要約 (i:入力モード Esc:通常モード Ctrl+S:送信)";
-
-    // Update terminal width for auto-wrap calculation
-    app.terminal_width = area.width;
 
     let border_style = if app.is_editing {
         Style::default().fg(Color::Cyan)
@@ -120,9 +126,9 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     // Get full screen area
     let full_area = frame.area();
 
-    // Calculate center 75% overlay area with minimum size guarantees
-    let overlay_width = full_area.width.saturating_mul(75).saturating_div(100).max(40);
-    let overlay_height = full_area.height.saturating_mul(75).saturating_div(100).max(10);
+    // Calculate center overlay area with minimum size guarantees
+    let overlay_width = full_area.width.saturating_mul(OVERLAY_SIZE_PERCENT).saturating_div(100).max(MIN_OVERLAY_WIDTH);
+    let overlay_height = full_area.height.saturating_mul(OVERLAY_SIZE_PERCENT).saturating_div(100).max(MIN_OVERLAY_HEIGHT);
     let x = full_area.width.saturating_sub(overlay_width) / 2;
     let y = full_area.height.saturating_sub(overlay_height) / 2;
 

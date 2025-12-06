@@ -4,6 +4,13 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
+/// Badge award interval (every N correct answers)
+const BADGE_INTERVAL: usize = 5;
+/// Maximum consecutive streak for badges (10 badges)
+const MAX_CONSECUTIVE_STREAK: usize = 50;
+/// Maximum cumulative correct answers for badges (20 badges)
+const MAX_CUMULATIVE_MILESTONE: usize = 100;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrainingResult {
     pub timestamp: DateTime<Local>,
@@ -73,8 +80,8 @@ impl TrainingStats {
         if passed {
             self.current_streak += 1;
 
-            // Award consecutive streak badge (every 5, max 10 badges = 50 streak)
-            if self.current_streak.is_multiple_of(5) && self.current_streak <= 50 {
+            // Award consecutive streak badge
+            if self.current_streak.is_multiple_of(BADGE_INTERVAL) && self.current_streak <= MAX_CONSECUTIVE_STREAK {
                 let badge = Badge {
                     badge_type: BadgeType::ConsecutiveStreak(self.current_streak),
                     earned_at: Local::now(),
@@ -88,8 +95,8 @@ impl TrainingStats {
             // Count total correct answers for cumulative milestone
             let total_correct = self.results.iter().filter(|r| r.passed).count();
 
-            // Award cumulative milestone badge (every 5, max 20 badges = 100 total)
-            if total_correct.is_multiple_of(5) && total_correct <= 100 {
+            // Award cumulative milestone badge
+            if total_correct.is_multiple_of(BADGE_INTERVAL) && total_correct <= MAX_CUMULATIVE_MILESTONE {
                 let badge = Badge {
                     badge_type: BadgeType::CumulativeMilestone(total_correct),
                     earned_at: Local::now(),
@@ -137,7 +144,7 @@ impl TrainingStats {
                 max_streak = max_streak.max(current_streak);
 
                 // Award consecutive streak badges
-                if current_streak.is_multiple_of(5) && current_streak <= 50 {
+                if current_streak.is_multiple_of(BADGE_INTERVAL) && current_streak <= MAX_CONSECUTIVE_STREAK {
                     let badge = Badge {
                         badge_type: BadgeType::ConsecutiveStreak(current_streak),
                         earned_at: result.timestamp,
@@ -148,7 +155,7 @@ impl TrainingStats {
                 }
 
                 // Award cumulative milestone badges
-                if total_correct.is_multiple_of(5) && total_correct <= 100 {
+                if total_correct.is_multiple_of(BADGE_INTERVAL) && total_correct <= MAX_CUMULATIVE_MILESTONE {
                     let badge = Badge {
                         badge_type: BadgeType::CumulativeMilestone(total_correct),
                         earned_at: result.timestamp,

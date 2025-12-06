@@ -33,6 +33,7 @@ pub struct App {
     pub selected_menu_item: usize,
     pub help_scroll: u16,
     pub terminal_width: u16,
+    pub terminal_height: u16,
 }
 
 impl Default for App {
@@ -60,7 +61,8 @@ impl Default for App {
             character_count: 400,
             selected_menu_item: 0,
             help_scroll: 0,
-            terminal_width: 150, // Default, will be updated on first render
+            terminal_width: 100, // Default, will be updated on first render
+            terminal_height: 30, // Default, will be updated on first render
         }
     }
 }
