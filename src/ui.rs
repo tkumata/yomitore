@@ -1,9 +1,10 @@
 use crate::app::{App, ViewMode, MENU_OPTIONS};
 use crate::help;
 use crate::reports;
+use rat_text::HasScreenCursor;
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 /// Renders the user interface widgets.
@@ -39,42 +40,32 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
     render_header(frame, main_layout[0]);
 
-    // Content layout: Left (Original) and Right (Answer + Evaluation)
+    // Content layout: Fixed 50-50 split
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(50), // Left: Original text
-            Constraint::Percentage(50), // Right: Answer + Evaluation
+            Constraint::Percentage(50), // Right: Answer input
         ])
         .split(main_layout[1]);
 
-    // Right side layout: Answer (top) and Evaluation (bottom)
-    let right_layout = if app.show_evaluation {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(50), // Answer block
-                Constraint::Percentage(50), // Evaluation block
-            ])
-            .split(content_layout[1])
-    } else {
-        Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Percentage(100), // Answer block only
-            ])
-            .split(content_layout[1])
-    };
-
     // Render blocks
     render_original_text(app, frame, content_layout[0]);
-    render_summary_input(app, frame, right_layout[0]);
+    render_summary_input(app, frame, content_layout[1]);
 
-    if app.show_evaluation {
-        render_evaluation(app, frame, right_layout[1]);
+    // Render evaluation overlay on top if visible
+    if app.show_evaluation_overlay {
+        render_evaluation_overlay(app, frame);
     }
 
     render_status_bar(app, frame, main_layout[2]);
+
+    // Set cursor position if editing
+    if app.is_editing {
+        if let Some((cx, cy)) = app.text_area_state.screen_cursor() {
+            frame.set_cursor_position((cx, cy));
+        }
+    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
@@ -99,6 +90,9 @@ fn render_original_text(app: &App, frame: &mut Frame, area: Rect) {
 fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
     let title = "あなたの要約 (i:入力モード Esc:通常モード Ctrl+S:送信)";
 
+    // Update terminal width for auto-wrap calculation
+    app.terminal_width = area.width;
+
     let border_style = if app.is_editing {
         Style::default().fg(Color::Cyan)
     } else {
@@ -110,53 +104,76 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    // Create wrapped text display with cursor
-    let text = if app.summary_input.is_empty() {
-        "Press 'i' to start typing...".to_string()
-    } else {
-        app.summary_input.clone()
-    };
+    // Create TextArea widget with word-wrap enabled
+    use rat_text::text_area::{TextArea, TextWrap};
 
-    // Add cursor visual indicator when in edit mode
-    let display_text = if app.is_editing {
-        let before = &text[..app.cursor_position.min(text.len())];
-        let after = if app.cursor_position < text.len() {
-            &text[app.cursor_position..]
-        } else {
-            " "
-        };
-        format!("{}█{}", before, after)
-    } else {
-        text
-    };
-
-    let paragraph = Paragraph::new(display_text)
+    let textarea = TextArea::new()
         .block(block)
-        .wrap(Wrap { trim: false })
+        .text_wrap(TextWrap::Word(10))  // Enable word-wrap mode! 10 = margin for preferred wrap
         .style(Style::default());
 
-    frame.render_widget(paragraph, area);
+    // Render with state
+    frame.render_stateful_widget(textarea, area, &mut app.text_area_state);
 }
 
-fn render_evaluation(app: &App, frame: &mut Frame, area: Rect) {
+fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
+    // Get full screen area
+    let full_area = frame.area();
+
+    // Calculate center 75% overlay area with minimum size guarantees
+    let overlay_width = full_area.width.saturating_mul(75).saturating_div(100).max(40);
+    let overlay_height = full_area.height.saturating_mul(75).saturating_div(100).max(10);
+    let x = full_area.width.saturating_sub(overlay_width) / 2;
+    let y = full_area.height.saturating_sub(overlay_height) / 2;
+
+    let overlay_area = Rect {
+        x,
+        y,
+        width: overlay_width,
+        height: overlay_height,
+    };
+
+    // Create semi-transparent effect by dimming the background
+    // Fill entire screen with dark gray to dim the content behind
+    let dimmed_background = Block::default()
+        .style(Style::default().bg(Color::Rgb(20, 20, 20))); // Very dark gray
+    frame.render_widget(dimmed_background, full_area);
+
+    // Clear the overlay area explicitly to reset all cells
+    frame.render_widget(Clear, overlay_area);
+
+    // Fill overlay area with solid black background using a Paragraph
+    let black_background = Paragraph::new("")
+        .style(Style::default().bg(Color::Black));
+    frame.render_widget(black_background, overlay_area);
+
+    // Determine border color based on pass/fail
     let border_color = if app.evaluation_passed {
         Color::Green
     } else {
         Color::Red
     };
 
+    // Render the block with borders
     let block = Block::default()
-        .title("評価結果 (Shift+↑/↓ or Shift+j/k: スクロール, n: 次のトレーニング)")
+        .title(" 評価結果 (e: 閉じる, Shift+↑/↓ or Shift+j/k: スクロール, n: 次の問題) ")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(border_color));
+        .border_style(Style::default().fg(border_color))
+        .style(Style::default().bg(Color::Black));
 
+    // Calculate inner area (inside the borders)
+    let inner_area = block.inner(overlay_area);
+
+    // Render the block (borders)
+    frame.render_widget(block, overlay_area);
+
+    // Render the text
     let paragraph = Paragraph::new(app.evaluation_text.as_str())
-        .block(block)
         .wrap(Wrap { trim: false })
-        .scroll((app.evaluation_text_scroll, 0))
-        .style(Style::default());
+        .scroll((app.evaluation_overlay_scroll, 0))
+        .style(Style::default().bg(Color::Black).fg(Color::White));
 
-    frame.render_widget(paragraph, area);
+    frame.render_widget(paragraph, inner_area);
 }
 
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {

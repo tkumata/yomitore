@@ -9,7 +9,8 @@ mod tui;
 mod ui;
 
 use crate::{api_client::ApiClient, app::{App, ViewMode, MENU_OPTIONS}, error::AppError};
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use rat_text::event::HandleEvent;
 use std::{env, time::Duration};
 
 #[tokio::main]
@@ -51,14 +52,23 @@ async fn main() -> Result<(), AppError> {
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
                     if let Some(client) = &app.api_client {
-                        match client.evaluate_summary(&app.original_text, &app.summary_input).await {
+                        // Get summary from text_area_state
+                        let summary = app.text_area_state.value().to_string();
+
+                        match client.evaluate_summary(&app.original_text, &summary).await {
                             Ok(evaluation) => {
-                                // Check if the evaluation contains "はい" (yes) to determine pass/fail
-                                app.evaluation_passed = evaluation.contains("はい");
+                                // Check if the evaluation starts with "はい" (yes) to determine pass/fail
+                                // More robust: only check the first line
+                                app.evaluation_passed = evaluation
+                                    .lines()
+                                    .next()
+                                    .map(|line| line.trim().starts_with("はい"))
+                                    .unwrap_or(false);
                                 app.evaluation_text = evaluation;
-                                app.show_evaluation = true;
+                                app.show_evaluation_overlay = true;
+                                app.evaluation_overlay_scroll = 0;
                                 app.is_evaluating = false;
-                                app.status_message = "Evaluation complete. Press 'n' for next training.".to_string();
+                                app.status_message = "Evaluation complete. Press 'e' to toggle, 'n' for next.".to_string();
 
                                 // Save the result to stats
                                 app.stats.add_result(app.evaluation_passed);
@@ -69,7 +79,8 @@ async fn main() -> Result<(), AppError> {
                             Err(e) => {
                                 app.evaluation_text = format!("Error: {}", e);
                                 app.evaluation_passed = false;
-                                app.show_evaluation = true;
+                                app.show_evaluation_overlay = true;
+                                app.evaluation_overlay_scroll = 0;
                                 app.is_evaluating = false;
                                 app.status_message = "Error occurred.".to_string();
                             }
@@ -77,12 +88,13 @@ async fn main() -> Result<(), AppError> {
                     }
                 }
                 AppAction::NextTraining => {
-                    app.show_evaluation = false;
+                    // Reset all evaluation-related state
+                    app.show_evaluation_overlay = false;
                     app.evaluation_text.clear();
-                    app.summary_input.clear();
-                    app.cursor_position = 0;
+                    app.evaluation_passed = false;
+                    app.text_area_state = rat_text::text_area::TextAreaState::default();
                     app.original_text_scroll = 0;
-                    app.evaluation_text_scroll = 0;
+                    app.evaluation_overlay_scroll = 0;
                     app.status_message = "Generating new text...".to_string();
                     tui.draw(|frame| ui::render(&mut app, frame))?;
 
@@ -114,9 +126,12 @@ enum AppAction {
 }
 
 async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
-    if event::poll(Duration::from_millis(100))?
-        && let Event::Key(key) = event::read()?
-        && key.kind == KeyEventKind::Press {
+    if event::poll(Duration::from_millis(100))? {
+        let ev = event::read()?;
+        if let Event::Key(key) = ev {
+            if key.kind != KeyEventKind::Press {
+                return Ok(None);
+            }
                 // Handle menu navigation
                 if app.view_mode == ViewMode::Menu {
                     match key.code {
@@ -155,65 +170,23 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                 }
 
                 if app.is_editing {
-                    match key.code {
-                        KeyCode::Esc => {
+                    // Check for Ctrl+S to submit (Shift+Enter doesn't work in most terminals)
+                    if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
+                        // Ctrl+S: Submit for evaluation
+                        let content = app.text_area_state.value().to_string();
+                        if !content.trim().is_empty() {
                             app.is_editing = false;
-                            app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                            app.text_area_state.focus.set(false);  // Disable focus
+                            return Ok(Some(AppAction::Evaluate));
                         }
-                        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            if !app.summary_input.is_empty() {
-                                app.is_editing = false;
-                                return Ok(Some(AppAction::Evaluate));
-                            }
-                        }
-                        KeyCode::Char(c) => {
-                            app.summary_input.insert(app.cursor_position, c);
-                            app.cursor_position += c.len_utf8();
-                        }
-                        KeyCode::Backspace => {
-                            if app.cursor_position > 0 {
-                                let mut idx = app.cursor_position - 1;
-                                while idx > 0 && !app.summary_input.is_char_boundary(idx) {
-                                    idx -= 1;
-                                }
-                                app.summary_input.remove(idx);
-                                app.cursor_position = idx;
-                            }
-                        }
-                        KeyCode::Delete => {
-                            if app.cursor_position < app.summary_input.len() {
-                                app.summary_input.remove(app.cursor_position);
-                            }
-                        }
-                        KeyCode::Left => {
-                            if app.cursor_position > 0 {
-                                let mut idx = app.cursor_position - 1;
-                                while idx > 0 && !app.summary_input.is_char_boundary(idx) {
-                                    idx -= 1;
-                                }
-                                app.cursor_position = idx;
-                            }
-                        }
-                        KeyCode::Right => {
-                            if app.cursor_position < app.summary_input.len() {
-                                let mut idx = app.cursor_position + 1;
-                                while idx < app.summary_input.len() && !app.summary_input.is_char_boundary(idx) {
-                                    idx += 1;
-                                }
-                                app.cursor_position = idx;
-                            }
-                        }
-                        KeyCode::Home => {
-                            app.cursor_position = 0;
-                        }
-                        KeyCode::End => {
-                            app.cursor_position = app.summary_input.len();
-                        }
-                        KeyCode::Enter => {
-                            app.summary_input.insert(app.cursor_position, '\n');
-                            app.cursor_position += 1;
-                        }
-                        _ => {}
+                    } else if key.code == KeyCode::Esc {
+                        app.is_editing = false;
+                        app.text_area_state.focus.set(false);  // Disable focus
+                        app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+                    } else {
+                        // Pass all other input to rat-text TextArea
+                        // Use HandleEvent trait
+                        let _ = app.text_area_state.handle(&ev, rat_text::event::Regular);
                     }
                 } else {
                     // Handle Report view
@@ -253,13 +226,25 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
 
                     match key.code {
                         KeyCode::Char('i') | KeyCode::Enter => {
-                            if !app.show_evaluation && app.view_mode == ViewMode::Normal {
+                            if !app.show_evaluation_overlay && app.view_mode == ViewMode::Normal {
                                 app.is_editing = true;
+                                app.text_area_state.focus.set(true);  // Enable focus for input!
                                 app.status_message = "Editing Mode. Press 'Esc' to exit.".to_string();
                             }
                         }
+                        KeyCode::Char('e') => {
+                            // Toggle evaluation overlay (only if evaluation exists)
+                            if app.view_mode == ViewMode::Normal && !app.evaluation_text.is_empty() {
+                                app.show_evaluation_overlay = !app.show_evaluation_overlay;
+                                if app.show_evaluation_overlay {
+                                    app.evaluation_overlay_scroll = 0;
+                                }
+                            }
+                        }
                         KeyCode::Char('n') => {
-                            if app.show_evaluation && app.view_mode == ViewMode::Normal {
+                            // Next training: close evaluation overlay and proceed
+                            if app.show_evaluation_overlay && app.view_mode == ViewMode::Normal {
+                                app.show_evaluation_overlay = false;
                                 return Ok(Some(AppAction::NextTraining));
                             }
                         }
@@ -287,17 +272,21 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
                             if app.view_mode == ViewMode::Normal {
-                                if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_add(1);
+                                if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    // Scroll evaluation overlay with bounds checking
+                                    let max_scroll = calculate_max_scroll(&app.evaluation_text, 20); // Approximate height
+                                    app.evaluation_overlay_scroll = app.evaluation_overlay_scroll.saturating_add(1).min(max_scroll);
                                 } else {
-                                    app.original_text_scroll = app.original_text_scroll.saturating_add(1);
+                                    // Scroll original text with bounds checking
+                                    let max_scroll = calculate_max_scroll(&app.original_text, 20); // Approximate height
+                                    app.original_text_scroll = app.original_text_scroll.saturating_add(1).min(max_scroll);
                                 }
                             }
                         }
                         KeyCode::Up | KeyCode::Char('k') => {
                             if app.view_mode == ViewMode::Normal {
-                                if app.show_evaluation && key.modifiers.contains(KeyModifiers::SHIFT) {
-                                    app.evaluation_text_scroll = app.evaluation_text_scroll.saturating_sub(1);
+                                if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
+                                    app.evaluation_overlay_scroll = app.evaluation_overlay_scroll.saturating_sub(1);
                                 } else {
                                     app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
                                 }
@@ -307,7 +296,14 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                     }
                 }
         }
+    }
     Ok(None)
+}
+
+/// Calculate the maximum scroll offset for given text content
+fn calculate_max_scroll(text: &str, visible_height: u16) -> u16 {
+    let total_lines = text.lines().count() as u16;
+    total_lines.saturating_sub(visible_height.saturating_sub(2)) // -2 for borders
 }
 
 async fn authenticate() -> Result<ApiClient, AppError> {
