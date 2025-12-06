@@ -1,5 +1,6 @@
 use crate::api_client::ApiClient;
 use crate::stats::TrainingStats;
+use rat_text::text_area::TextAreaState;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ViewMode {
@@ -19,43 +20,47 @@ pub struct App {
     pub original_text: String,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
-    pub evaluation_text_scroll: u16,
     pub evaluation_passed: bool,
     pub status_message: String,
     pub should_quit: bool,
-    pub summary_input: String,
-    pub cursor_position: usize,
+    pub text_area_state: TextAreaState,
     pub is_evaluating: bool,
-    pub show_evaluation: bool,
+    pub show_evaluation_overlay: bool,
+    pub evaluation_overlay_scroll: u16,
     pub view_mode: ViewMode,
     pub stats: TrainingStats,
     pub character_count: u16,
     pub selected_menu_item: usize,
     pub help_scroll: u16,
+    pub terminal_width: u16,
 }
 
 impl Default for App {
     fn default() -> Self {
         let stats = TrainingStats::load().unwrap_or_else(|_| TrainingStats::new());
+
+        // Initialize TextAreaState for rat-text
+        let text_area_state = TextAreaState::default();
+
         Self {
             api_client: None,
             is_editing: false,
             original_text: "Authenticating...".to_string(),
             original_text_scroll: 0,
             evaluation_text: String::new(),
-            evaluation_text_scroll: 0,
             evaluation_passed: false,
             status_message: "Select character count and press Enter to start".to_string(),
             should_quit: false,
-            summary_input: String::new(),
-            cursor_position: 0,
+            text_area_state,
             is_evaluating: false,
-            show_evaluation: false,
+            show_evaluation_overlay: false,
+            evaluation_overlay_scroll: 0,
             view_mode: ViewMode::Menu,
             stats,
             character_count: 400,
             selected_menu_item: 0,
             help_scroll: 0,
+            terminal_width: 150, // Default, will be updated on first render
         }
     }
 }
