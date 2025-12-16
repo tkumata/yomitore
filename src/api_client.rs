@@ -51,15 +51,13 @@ impl ApiClient {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        Self {
-            client,
-            api_key,
-        }
+        Self { client, api_key }
     }
 
     pub async fn validate_credentials(&self) -> Result<(), AppError> {
         let url = format!("{}{}", API_BASE_URL, MODELS_ENDPOINT);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .bearer_auth(&self.api_key)
             .send()
@@ -84,7 +82,8 @@ impl ApiClient {
             messages,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_body)
@@ -92,9 +91,7 @@ impl ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(AppError::ApiError(
-                response.error_for_status().unwrap_err(),
-            ));
+            return Err(AppError::ApiError(response.error_for_status().unwrap_err()));
         }
 
         let chat_response: ChatResponse = response.json().await?;

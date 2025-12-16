@@ -19,7 +19,7 @@ pub struct TrainingResult {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub enum BadgeType {
-    ConsecutiveStreak(usize), // 連続正解数 (5, 10, 15, ...)
+    ConsecutiveStreak(usize),   // 連続正解数 (5, 10, 15, ...)
     CumulativeMilestone(usize), // 累積正解数 (5, 10, 15, ...)
 }
 
@@ -81,7 +81,9 @@ impl TrainingStats {
             self.current_streak += 1;
 
             // Award consecutive streak badge
-            if self.current_streak.is_multiple_of(BADGE_INTERVAL) && self.current_streak <= MAX_CONSECUTIVE_STREAK {
+            if self.current_streak.is_multiple_of(BADGE_INTERVAL)
+                && self.current_streak <= MAX_CONSECUTIVE_STREAK
+            {
                 let badge = Badge {
                     badge_type: BadgeType::ConsecutiveStreak(self.current_streak),
                     earned_at: Local::now(),
@@ -96,7 +98,9 @@ impl TrainingStats {
             let total_correct = self.results.iter().filter(|r| r.passed).count();
 
             // Award cumulative milestone badge
-            if total_correct.is_multiple_of(BADGE_INTERVAL) && total_correct <= MAX_CUMULATIVE_MILESTONE {
+            if total_correct.is_multiple_of(BADGE_INTERVAL)
+                && total_correct <= MAX_CUMULATIVE_MILESTONE
+            {
                 let badge = Badge {
                     badge_type: BadgeType::CumulativeMilestone(total_correct),
                     earned_at: Local::now(),
@@ -144,7 +148,9 @@ impl TrainingStats {
                 max_streak = max_streak.max(current_streak);
 
                 // Award consecutive streak badges
-                if current_streak.is_multiple_of(BADGE_INTERVAL) && current_streak <= MAX_CONSECUTIVE_STREAK {
+                if current_streak.is_multiple_of(BADGE_INTERVAL)
+                    && current_streak <= MAX_CONSECUTIVE_STREAK
+                {
                     let badge = Badge {
                         badge_type: BadgeType::ConsecutiveStreak(current_streak),
                         earned_at: result.timestamp,
@@ -155,7 +161,9 @@ impl TrainingStats {
                 }
 
                 // Award cumulative milestone badges
-                if total_correct.is_multiple_of(BADGE_INTERVAL) && total_correct <= MAX_CUMULATIVE_MILESTONE {
+                if total_correct.is_multiple_of(BADGE_INTERVAL)
+                    && total_correct <= MAX_CUMULATIVE_MILESTONE
+                {
                     let badge = Badge {
                         badge_type: BadgeType::CumulativeMilestone(total_correct),
                         earned_at: result.timestamp,
@@ -230,12 +238,14 @@ impl TrainingStats {
 
     /// Get badges grouped by type for display
     pub fn get_badges_by_type(&self) -> (Vec<&Badge>, Vec<&Badge>) {
-        let consecutive: Vec<&Badge> = self.badges
+        let consecutive: Vec<&Badge> = self
+            .badges
             .iter()
             .filter(|b| matches!(b.badge_type, BadgeType::ConsecutiveStreak(_)))
             .collect();
 
-        let cumulative: Vec<&Badge> = self.badges
+        let cumulative: Vec<&Badge> = self
+            .badges
             .iter()
             .filter(|b| matches!(b.badge_type, BadgeType::CumulativeMilestone(_)))
             .collect();
@@ -248,7 +258,7 @@ impl Badge {
     /// Get the emoji icon for this badge
     pub fn get_icon(&self) -> &str {
         match &self.badge_type {
-            BadgeType::ConsecutiveStreak(_) => "🔥", // Fire for streak
+            BadgeType::ConsecutiveStreak(_) => "🔥",   // Fire for streak
             BadgeType::CumulativeMilestone(_) => "⭐", // Star for milestone
         }
     }

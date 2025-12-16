@@ -10,9 +10,10 @@ struct Config {
 }
 
 fn get_config_path() -> Result<PathBuf, AppError> {
-    let config_dir = dirs::config_dir().ok_or(AppError::IoError(
-        std::io::Error::new(std::io::ErrorKind::NotFound, "Config directory not found"),
-    ))?;
+    let config_dir = dirs::config_dir().ok_or(AppError::IoError(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "Config directory not found",
+    )))?;
     let app_config_dir = config_dir.join("yomitore");
     fs::create_dir_all(&app_config_dir)?;
     Ok(app_config_dir.join("config.toml"))
@@ -26,8 +27,12 @@ pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
     let toml_string = toml::to_string(&config)
         .map_err(|_| AppError::IoError(std::io::Error::other("Failed to serialize config")))?;
 
-    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(&config_path)?;
-    
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&config_path)?;
+
     // Set file permissions to 600 on Unix-like systems
     #[cfg(unix)]
     {
@@ -57,6 +62,6 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
 
     let config: Config = toml::from_str(&contents)
         .map_err(|_| AppError::IoError(std::io::Error::other("Failed to parse config")))?;
-    
+
     Ok(config.api_key)
 }
