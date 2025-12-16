@@ -1,6 +1,6 @@
 use crate::api_client::ApiClient;
 use crate::stats::TrainingStats;
-use rat_text::text_area::TextAreaState;
+use rat_text::text_area::{TextAreaState, TextWrap};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ViewMode {
@@ -33,6 +33,7 @@ pub struct App {
     pub selected_menu_item: usize,
     pub help_scroll: u16,
     pub terminal_width: u16,
+    pub terminal_height: u16,
 }
 
 impl Default for App {
@@ -40,7 +41,7 @@ impl Default for App {
         let stats = TrainingStats::load().unwrap_or_else(|_| TrainingStats::new());
 
         // Initialize TextAreaState for rat-text
-        let text_area_state = TextAreaState::default();
+        let text_area_state = Self::new_text_area_state();
 
         Self {
             api_client: None,
@@ -60,12 +61,19 @@ impl Default for App {
             character_count: 400,
             selected_menu_item: 0,
             help_scroll: 0,
-            terminal_width: 150, // Default, will be updated on first render
+            terminal_width: 100, // Default, will be updated on first render
+            terminal_height: 30, // Default, will be updated on first render
         }
     }
 }
 
 impl App {
+    pub fn new_text_area_state() -> TextAreaState {
+        let mut state = TextAreaState::default();
+        state.set_text_wrap(TextWrap::Word(2)); // prefer safe word-wrap
+        state
+    }
+
     /// Generate the text generation prompt based on current character count
     pub fn generate_text_prompt(&self) -> String {
         format!(
@@ -76,7 +84,8 @@ impl App {
 
     /// Check if the current state indicates no training has started
     pub fn has_training_started(&self) -> bool {
-        self.original_text != "Authenticating..." && !self.original_text.starts_with("Failed to generate")
+        self.original_text != "Authenticating..."
+            && !self.original_text.starts_with("Failed to generate")
     }
 
     /// Return to the appropriate view mode (Menu if no training, Normal otherwise)

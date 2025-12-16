@@ -12,10 +12,7 @@ fn main() {
         String::new()
     };
 
-    let content = format!(
-        "pub const HELP_CONTENT: &str = r#\"{}\"#;",
-        help_content
-    );
+    let content = format!("pub const HELP_CONTENT: &str = r#\"{}\"#;", help_content);
 
     fs::write(dest_path, content).unwrap();
 

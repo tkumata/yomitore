@@ -8,6 +8,8 @@ use std::collections::HashMap;
 
 const DAYS_IN_MONTH: usize = 30;
 const WEEKS_TO_SHOW: usize = 4;
+/// Maximum number of badges to display in report
+const MAX_BADGES_DISPLAY: usize = 20;
 
 /// Renders badge section common to both reports
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
@@ -16,22 +18,32 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
 
     // Consecutive streak badges (🔥)
     if !consecutive_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("🔥 連続正解: ", Style::default().fg(Color::Yellow).bold()),
-        ];
+        let mut badge_line = vec![Span::styled(
+            "🔥 連続正解: ",
+            Style::default().fg(Color::Yellow).bold(),
+        )];
         for badge in consecutive_badges.iter().take(10) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+            badge_line.push(Span::raw(format!(
+                "{}{} ",
+                badge.get_icon(),
+                badge.get_display_text()
+            )));
         }
         lines.push(Line::from(badge_line));
     }
 
     // Cumulative milestone badges (⭐)
     if !cumulative_badges.is_empty() {
-        let mut badge_line = vec![
-            Span::styled("⭐ 累積正解: ", Style::default().fg(Color::Cyan).bold()),
-        ];
-        for badge in cumulative_badges.iter().take(20) {
-            badge_line.push(Span::raw(format!("{}{} ", badge.get_icon(), badge.get_display_text())));
+        let mut badge_line = vec![Span::styled(
+            "⭐ 累積正解: ",
+            Style::default().fg(Color::Cyan).bold(),
+        )];
+        for badge in cumulative_badges.iter().take(MAX_BADGES_DISPLAY) {
+            badge_line.push(Span::raw(format!(
+                "{}{} ",
+                badge.get_icon(),
+                badge.get_display_text()
+            )));
         }
         lines.push(Line::from(badge_line));
     }
@@ -56,8 +68,8 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4),      // Badges (4 lines)
-            Constraint::Min(0),         // Reports
+            Constraint::Length(4), // Badges (4 lines)
+            Constraint::Min(0),    // Reports
         ])
         .split(inner);
 
@@ -75,10 +87,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     // Split the bottom area horizontally: left for monthly, right for weekly
     let horizontal_layout = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(vertical_layout[1]);
 
     // Render monthly report on the left
@@ -89,7 +98,11 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(horizontal_layout[0]);
     frame.render_widget(monthly_block, horizontal_layout[0]);
-    let heatmap = create_heatmap_without_badges(&daily_stats, monthly_inner.width as usize, monthly_inner.height as usize);
+    let heatmap = create_heatmap_without_badges(
+        &daily_stats,
+        monthly_inner.width as usize,
+        monthly_inner.height as usize,
+    );
     let paragraph = Paragraph::new(heatmap);
     frame.render_widget(paragraph, monthly_inner);
 
@@ -101,12 +114,20 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .border_style(Style::default().fg(Color::Magenta));
     let weekly_inner = weekly_block.inner(horizontal_layout[1]);
     frame.render_widget(weekly_block, horizontal_layout[1]);
-    let chart = create_bar_chart_without_badges(&weekly_stats, weekly_inner.width as usize, weekly_inner.height as usize);
+    let chart = create_bar_chart_without_badges(
+        &weekly_stats,
+        weekly_inner.width as usize,
+        weekly_inner.height as usize,
+    );
     let paragraph = Paragraph::new(chart);
     frame.render_widget(paragraph, weekly_inner);
 }
 
-fn create_heatmap_without_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, _width: usize, _height: usize) -> Text<'static> {
+fn create_heatmap_without_badges(
+    daily_stats: &HashMap<NaiveDate, DailyStats>,
+    _width: usize,
+    _height: usize,
+) -> Text<'static> {
     let mut lines = Vec::new();
     let today = Local::now().date_naive();
 
@@ -140,7 +161,10 @@ fn create_heatmap_without_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, _
 
         // Week label
         let row_start_date = grid_start + chrono::Duration::days((row * 7) as i64);
-        line_spans.push(Span::raw(format!("W{:02} ", row_start_date.iso_week().week())));
+        line_spans.push(Span::raw(format!(
+            "W{:02} ",
+            row_start_date.iso_week().week()
+        )));
 
         for col in 0..cols {
             let date = row_start_date + chrono::Duration::days(col as i64);
@@ -212,7 +236,11 @@ fn create_heatmap_without_badges(daily_stats: &HashMap<NaiveDate, DailyStats>, _
     Text::from(lines)
 }
 
-fn create_bar_chart_without_badges(weekly_stats: &[WeeklyStats], _width: usize, height: usize) -> Text<'static> {
+fn create_bar_chart_without_badges(
+    weekly_stats: &[WeeklyStats],
+    _width: usize,
+    height: usize,
+) -> Text<'static> {
     let mut lines = Vec::new();
 
     // Find max value for scaling
@@ -238,9 +266,7 @@ fn create_bar_chart_without_badges(weekly_stats: &[WeeklyStats], _width: usize, 
             0
         };
 
-        let mut line_spans = vec![
-            Span::raw(format!("第{}週: ", stats.week_number)),
-        ];
+        let mut line_spans = vec![Span::raw(format!("第{}週: ", stats.week_number))];
 
         // Correct bar (green)
         line_spans.push(Span::styled(
@@ -252,9 +278,7 @@ fn create_bar_chart_without_badges(weekly_stats: &[WeeklyStats], _width: usize, 
         lines.push(Line::from(line_spans));
 
         // Incorrect bar (red)
-        let mut incorrect_line = vec![
-            Span::raw("       "),
-        ];
+        let mut incorrect_line = vec![Span::raw("       ")];
         incorrect_line.push(Span::styled(
             "█".repeat(incorrect_bars),
             Style::default().fg(Color::Red),

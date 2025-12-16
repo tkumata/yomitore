@@ -37,6 +37,7 @@ const API_BASE_URL: &str = "https://api.groq.com/openai/v1";
 const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
 const MODELS_ENDPOINT: &str = "/models";
 const CHAT_MODEL: &str = "openai/gpt-oss-120b";
+const API_TIMEOUT_SECS: u64 = 60; // API request timeout in seconds
 
 pub struct ApiClient {
     client: reqwest::Client,
@@ -45,15 +46,18 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new(api_key: String) -> Self {
-        Self {
-            client: reqwest::Client::new(),
-            api_key,
-        }
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(API_TIMEOUT_SECS))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        Self { client, api_key }
     }
 
     pub async fn validate_credentials(&self) -> Result<(), AppError> {
         let url = format!("{}{}", API_BASE_URL, MODELS_ENDPOINT);
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .bearer_auth(&self.api_key)
             .send()
@@ -78,7 +82,8 @@ impl ApiClient {
             messages,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_body)
@@ -86,9 +91,7 @@ impl ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(AppError::ApiError(
-                response.error_for_status().unwrap_err(),
-            ));
+            return Err(AppError::ApiError(response.error_for_status().unwrap_err()));
         }
 
         let chat_response: ChatResponse = response.json().await?;

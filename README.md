@@ -1,14 +1,16 @@
 # yomitore (読トレ)
 
-`yomitore` は、AI との対話的なトレーニングを通じて、ユーザーの読解力と要約力を向上させるために設計された CLI ベースのアプリケーションです。
+`yomitore` は、AI との対話的なトレーニングを通じて、ユーザーの読解力と要約力を向上させるために設計された TUI アプリケーションです。
 
 ## 概要
 
-このツールは Rust で開発されており、CloudGroq API を活用して、読解と要約の演習を継続的に提供します。主要なデスクトップオペレーティングシステム (Windows, macOS, Linux) でシームレスに動作するターミナルベースのアプリケーションです。
+このツールは Rust で開発されており、GroqCloud API を活用して、読解と要約の演習を継続的に提供します。主要なデスクトップオペレーティングシステム (Windows, macOS, Linux) でシームレスに動作するターミナルベースのアプリケーションです。
 
 ![Screenshot](./docs/images/screenshot-00.png)
 ![Screenshot](./docs/images/screenshot-01.png)
 ![Screenshot](./docs/images/screenshot-02.png)
+![Screenshot](./docs/images/screenshot-03.png)
+![Screenshot](./docs/images/screenshot-04.png)
 
 ## 特徴
 
@@ -17,7 +19,7 @@
 3.  **AI による評価**: ユーザーの要約は、元の文章との比較評価のために AI に送信されます。悪かった点を具体的に教えてくれます。
 4.  **継続的なループ**: フィードバックを受けた後、ユーザーは次の問題に進むことができ、継続的な練習が可能です。
 5.  **グラフ:** 月次、週次の正誤履歴を、ヒートマップや棒グラフで確認できます。
-6.  **レイアウト:** 3 分割のブロッックで見やすく利用可能。(150x40 のターミナルサイズが必要です)
+6.  **レイアウト:** 2 分割のブロックに、AI による診断結果を表示するフローティングブロックで見やすく利用可能。(100x30 のターミナルサイズが必要です)
 
 ## 要件
 
@@ -27,17 +29,17 @@
 
 ### API キーの設定
 
-このアプリケーションを使用するには、[CloudGroq](https://console.groq.com/keys) の有効な API キーが必要です。アプリケーションは、以下の 3 つの方法のいずれかで設定できます。
+このアプリケーションを使用するには、[GroqCloud](https://console.groq.com/keys) の有効な API キーが必要です。アプリケーションは、以下の 3 つの方法のいずれかで設定できます。
 
 1.  **環境変数（推奨）**:
-    `GROQ_API_KEY`環境変数を設定します。
+    `GROQ_API_KEY` 環境変数を設定します。
 
     ```sh
     export GROQ_API_KEY="your_api_key_here"
     ```
 
 2.  **.env ファイル**:
-    プロジェクトのルートディレクトリ（`yomitore/`）に`.env`という名前のファイルを作成し、以下の行を追加します。
+    プロジェクトのルートディレクトリ (`yomitore/`) に `.env` という名前のファイルを作成し、以下の行を追加します。
 
     ```
     GROQ_API_KEY="your_api_key_here"
@@ -46,7 +48,7 @@
     設定ファイルの場所：
 
     - **Linux:** `~/.config/yomitore/config.toml`
-    - **macOS:** `~/Library/Application Support/yomitore/config.toml`
+    - **macOS:** `~/Library/Application\\ Support/yomitore/config.toml`
     - **Windows:** `C:\Users\<user>\AppData\Roaming\yomitore\config\config.toml`
 
 3.  **実行時のプロンプト**:
