@@ -14,7 +14,10 @@ use crate::{
     error::AppError,
 };
 use rat_text::event::HandleEvent;
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::{
+    crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    widgets::{Paragraph, Wrap},
+};
 use std::{env, time::Duration};
 
 /// Event polling interval in milliseconds
@@ -273,8 +276,14 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                                 let visible_height = (app.terminal_height * OVERLAY_SIZE_PERCENT
                                     / 100)
                                     .saturating_sub(4);
-                                let max_scroll =
-                                    calculate_max_scroll(&app.evaluation_text, visible_height);
+                                let visible_width = (app.terminal_width * OVERLAY_SIZE_PERCENT
+                                    / 100)
+                                    .saturating_sub(2);
+                                let max_scroll = calculate_max_scroll(
+                                    &app.evaluation_text,
+                                    visible_height,
+                                    visible_width,
+                                );
                                 app.evaluation_overlay_scroll = app
                                     .evaluation_overlay_scroll
                                     .saturating_add(1)
@@ -283,8 +292,12 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                                 // Scroll original text with bounds checking
                                 // Calculate visible height: half screen minus header and status bar
                                 let visible_height = (app.terminal_height / 2).saturating_sub(3);
-                                let max_scroll =
-                                    calculate_max_scroll(&app.original_text, visible_height);
+                                let visible_width = (app.terminal_width / 2).saturating_sub(2);
+                                let max_scroll = calculate_max_scroll(
+                                    &app.original_text,
+                                    visible_height,
+                                    visible_width,
+                                );
                                 app.original_text_scroll =
                                     app.original_text_scroll.saturating_add(1).min(max_scroll);
                             }
@@ -312,8 +325,12 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
 }
 
 /// Calculate the maximum scroll offset for given text content
-fn calculate_max_scroll(text: &str, visible_height: u16) -> u16 {
-    let total_lines = text.lines().count() as u16;
+fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> u16 {
+    if visible_width == 0 {
+        return 0;
+    }
+    let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
+    let total_lines = paragraph.line_count(visible_width) as u16;
     total_lines.saturating_sub(visible_height.saturating_sub(2)) // -2 for borders
 }
 
