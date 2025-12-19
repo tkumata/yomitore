@@ -296,12 +296,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dotenvy"
-version = "0.15.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
-
-[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1121,9 +1115,9 @@ dependencies = [
 
 [[package]]
 name = "rat-focus"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9778c58871fb145c6682633f432fcd4ec302f06fd41765dbd86b823e6cc6eaf4"
+checksum = "ef913e4622e233c442c87d220e6a0bdfd8bd730eedaa44d37a3a48feb1bf7f40"
 dependencies = [
  "crossterm 0.28.1",
  "dyn-clone",
@@ -1145,9 +1139,9 @@ dependencies = [
 
 [[package]]
 name = "rat-scrolled"
-version = "1.3.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72abe5d23aef5d1d53a92e3c5c4a2477063080c1d7f67308d1c9fa33c78a626d"
+checksum = "585fbabc56eb553531f2caf807ad77e3198dd609f4885550dcc984098f5ccff7"
 dependencies = [
  "crossterm 0.28.1",
  "log",
@@ -1158,9 +1152,9 @@ dependencies = [
 
 [[package]]
 name = "rat-text"
-version = "2.5.0"
+version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e0c3c1b4129f710dd2d69c7457c42ef814c1419dfa88b9b49348f59f20b3569"
+checksum = "cadbc4932a509f6d199c18561075662b4fa6258add21fd9741b76ad79605a73a"
 dependencies = [
  "chrono",
  "crossterm 0.28.1",
@@ -1315,27 +1309,6 @@ checksum = "93411e420bcd1a75ddd1dc3caf18c23155eda2c090631a85af21ba19e97093b5"
 dependencies = [
  "smallvec",
  "str_indices",
-]
-
-[[package]]
-name = "rpassword"
-version = "7.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d4c8b64f049c6721ec8ccec37ddfc3d641c4a7fca57e8f2a89de509c73df39"
-dependencies = [
- "libc",
- "rtoolbox",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "rtoolbox"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7cc970b249fbe527d6e02e0a227762c9108b2f49d81094fe357ffc6d14d7f6f"
-dependencies = [
- "libc",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2378,18 +2351,14 @@ dependencies = [
  "chrono",
  "crossterm 0.29.0",
  "dirs",
- "dotenvy",
  "rat-text",
  "ratatui",
  "reqwest",
- "rpassword",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
  "toml",
- "unicode-segmentation",
- "unicode-width 0.2.0",
 ]
 
 [[package]]
