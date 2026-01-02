@@ -59,16 +59,28 @@ AI が生成した文章を読んで要約を作成し、その要約を AI が�
 
 ### API キー
 
-初回起動時に GroqCloud API キーの入力が求められます。
-環境変数 `GROQ_API_KEY` に設定することもできます。
+**注意:** アプリケーションを使用するには、事前に API キーの設定が必要です。
 
-API キーは以下の場所に保存されます：
+以下のいずれかの方法で設定してください：
 
-- Linux: `~/.config/yomitore/config.toml`
-- macOS: `~/Library/Application\ Support/yomitore/config.toml`
-- Windows: `%APPDATA%\yomitore\config.toml`
+1. **設定ファイル (推奨)**:
+   以下のパスに `config.toml` ファイルを作成し、API キーを記述します。
 
-セキュリティのため、設定ファイルは 600 パーミッション（Unix 系）で保存されます。
+   - **Linux:** `~/.config/yomitore/config.toml`
+   - **macOS:** `~/Library/Application\ Support/yomitore/config.toml`
+   - **Windows:** `%APPDATA%\yomitore\config.toml`
+
+   ファイル内容:
+   ```toml
+   api_key = "your_groq_api_key_here"
+   ```
+
+2. **環境変数**:
+   環境変数 `GROQ_API_KEY` を設定します。
+
+   ```sh
+   export GROQ_API_KEY="your_groq_api_key_here"
+   ```
 
 ### ターミナルサイズ
 
@@ -124,9 +136,13 @@ API リクエストは 60 秒でタイムアウトします。
 
 ## トラブルシューティング
 
+### "Invalid API Key" エラー
+
+- 設定ファイルまたは環境変数が正しく設定されているか確認してください
+- キーに余分なスペースが含まれていないか確認してください
+
 ### エラーメッセージが表示される
 
-- API キーが正しいか確認してください
 - ネットワーク接続を確認してください
 - タイムアウトの場合は、文字数を減らしてみてください
 

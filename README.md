@@ -29,7 +29,7 @@
 
 ### API キーの設定
 
-このアプリケーションを使用するには、[GroqCloud](https://console.groq.com/keys) の有効な API キーが必要です。アプリケーションは、以下の 3 つの方法のいずれかで設定できます。
+このアプリケーションを使用するには、[GroqCloud](https://console.groq.com/keys) の有効な API キーが必要です。アプリケーションは、以下の 2 つの方法のいずれかで設定できます。
 
 1.  **環境変数（推奨）**:
     `GROQ_API_KEY` 環境変数を設定します。
@@ -38,21 +38,22 @@
     export GROQ_API_KEY="your_api_key_here"
     ```
 
-2.  **.env ファイル**:
-    プロジェクトのルートディレクトリ (`yomitore/`) に `.env` という名前のファイルを作成し、以下の行を追加します。
+2.  **設定ファイル**:
+    以下のパスに設定ファイル `config.toml` を手動で作成し、API キーを設定します。
 
-    ```
-    GROQ_API_KEY="your_api_key_here"
-    ```
-
-    設定ファイルの場所：
+    **ファイルパス:**
 
     - **Linux:** `~/.config/yomitore/config.toml`
-    - **macOS:** `~/Library/Application\\ Support/yomitore/config.toml`
+    - **macOS:** `~/Library/Application Support/yomitore/config.toml`
     - **Windows:** `C:\Users\<user>\AppData\Roaming\yomitore\config\config.toml`
 
-3.  **実行時のプロンプト**:
-    上記のいずれの方法も使用されていない場合、アプリケーションは起動時に API キーを安全に入力するよう求めます。
+    **内容:**
+
+    ```toml
+    api_key = "your_api_key_here"
+    ```
+
+    ※ アプリケーション起動時に、このファイルに有効なキーが保存されている場合は、自動的に読み込まれます。
 
 ## 実行方法
 
