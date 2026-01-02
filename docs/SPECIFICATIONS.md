@@ -436,16 +436,12 @@ tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-rpassword = "7"
-dotenvy = "0.15"
 thiserror = "2"
 dirs = "6.0"
 toml = "0.9"
-unicode-segmentation = "1.10.0"
-unicode-width = "0.2"
-ratatui = { version = "0.29.0", features = ["crossterm"] }
+ratatui = { version = "0.29", features = ["crossterm", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
-rat-text = "2.5.0"
+rat-text = "2.7"
 chrono = { version = "0.4", features = ["serde"] }
 ```
 
@@ -497,7 +493,6 @@ cargo clippy --all-targets --all-features
 1. **API キー保護**:
 
    - ファイルパーミッション 600（Unix 系）
-   - 画面表示時はマスク（rpassword 使用）
 
 2. **入力検証**:
 
