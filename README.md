@@ -42,11 +42,13 @@
     以下のパスに設定ファイル `config.toml` を手動で作成し、API キーを設定します。
 
     **ファイルパス:**
+
     - **Linux:** `~/.config/yomitore/config.toml`
     - **macOS:** `~/Library/Application Support/yomitore/config.toml`
     - **Windows:** `C:\Users\<user>\AppData\Roaming\yomitore\config\config.toml`
 
     **内容:**
+
     ```toml
     api_key = "your_api_key_here"
     ```
