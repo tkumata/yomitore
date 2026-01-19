@@ -1,14 +1,15 @@
 # 技術仕様書: 読解力トレーニング CLI (yomitore)
 
-**バージョン**: 0.1.9
-**最終更新日**: 2025-12-06
+**バージョン**: 0.1.10
+**最終更新日**: 2026-01-19
 
 ## 改訂履歴
 
-| Version | Date        | Change Log                                          |
-| ------- | ----------- | --------------------------------------------------- |
-| 0.1.9   | 2025-12-06  | API timeout, Define const, Improving error handling |
-| 0.1.0   | 1st Release | 1st Release                                         |
+| Version | Date        | Change Log                                                       |
+| ------- | ----------- | ---------------------------------------------------------------- |
+| 0.1.10  | 2026-01-19  | Update prompt strategy (Prompt Repetition), evaluation logic fix |
+| 0.1.9   | 2025-12-06  | API timeout, Define const, Improving error handling              |
+| 0.1.0   | 1st Release | 1st Release                                                      |
 
 ## 1. 概要
 
@@ -29,7 +30,7 @@
 - **`help.rs`**: ヘルプコンテンツの管理
 - **`error.rs`**: アプリケーション固有のエラー型（thiserror 使用）
 
-文字列生成と要約評価には生成 AI を利用してますが、<https://arxiv.org/abs/2512.14982> を参考にしてプロンプトを繰り返します。
+文字列生成と要約評価には生成 AI を利用してますが、<https://arxiv.org/abs/2512.14982> を参考にしてプロンプトを繰り返す手法 (Prompt Repetition) を採用しています。
 
 ### アーキテクチャ図
 
@@ -97,11 +98,13 @@
     "messages": [
       {
         "role": "user",
-        "content": "日本語の公的文書のようなお堅い文章をN文字程度で生成してください。"
+        "content": "日本の公的文書および新聞記事に共通する、客観的で簡潔かつ形式的な文体で、感情的表現や口語表現を避けた文章をN文字程度で生成してください。"
       }
     ]
   }
   ```
+
+  ※ 実装上は、このプロンプトは現在 `.repeat(2)` は適用されておらず、一度だけ送信されている（`src/app.rs`参照）。
 
 - **レスポンス処理**:
   - `choices[0].message.content` から生成文を抽出
@@ -136,15 +139,28 @@
 - **プロンプト**:
 
   ```text
-  以下の『要約文』は『原文』を適切に要約しているか「はい」か「いいえ」で端的に答えた上で以下の観点で評価せよ。
+  以下の「原文」と「要約文」を比較し、要約として適切か評価してください。
 
-  - 重要情報の抽出(5段階): 主要なポイントを捉えているか
-  - 簡潔性(5段階): 冗長な表現がないか
-  - 正確性(5段階): 事実の誤認や歪曲がないか
-  - 具体的な改善点: 3つ挙げてください
+  # 評価ルール
+  - 出力は必ず以下のフォーマットのみ使用すること
+  - 数値は 1〜5 の整数のみ
+  - 余計な文章や注釈は禁止
+  - Markdown 記法は禁止
+
+  # 出力フォーマット(厳守)
+  - 適切な要約か: はい／いいえ
+  - 重要情報の抽出: [1-5]
+  - 簡潔性: [1-5]
+  - 正確性: [1-5]
+  - 改善点1: ...
+  - 改善点2: ...
+  - 改善点3: ...
   - 総合評価: 合格/不合格
 
-  表示部は CLI ターミナルなので markdown 形式の出力は禁止とする。
+  # 採点基準
+  - 5: 非常に優れている
+  - 3: 可もなく不可もなく
+  - 1: 明確な問題がある
 
   # 原文
   {original_text}
@@ -153,7 +169,9 @@
   {summary_text}
   ```
 
-- **合否判定**: 評価結果の最初の行が「はい」で始まるかチェック（`evaluation.lines().next()...starts_with("はい")`）
+  ※ 実装上は上記の内容全体を `format!(...).repeat(2)` を使用して2回繰り返し、LLMへ送信する。
+
+- **合否判定**: 評価結果のテキスト内に「総合評価: 合格」という文字列が含まれているかチェック（`evaluation.contains("総合評価: 合格")`）
 
 ### 3.5. UI レンダリング (ui.rs, tui.rs)
 
@@ -435,15 +453,15 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 dirs = "6.0"
 toml = "0.9"
-ratatui = { version = "0.29", features = ["crossterm", "unstable-rendered-line-info"] }
+ratatui = { version = "0.30", features = ["crossterm", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
-rat-text = "2.7"
+rat-text = "3.0"
 chrono = { version = "0.4", features = ["serde"] }
 ```
 

@@ -59,13 +59,8 @@ async fn main() -> Result<(), AppError> {
 
                         match client.evaluate_summary(&app.original_text, &summary).await {
                             Ok(evaluation) => {
-                                // Check if the evaluation starts with "はい" (yes) to determine pass/fail
-                                // More robust: only check the first line
-                                app.evaluation_passed = evaluation
-                                    .lines()
-                                    .next()
-                                    .map(|line| line.trim().starts_with("はい"))
-                                    .unwrap_or(false);
+                                // Check for "総合評価: 合格" to determine pass/fail
+                                app.evaluation_passed = evaluation.contains("総合評価: 合格");
                                 app.evaluation_text = evaluation;
                                 app.show_evaluation_overlay = true;
                                 app.evaluation_overlay_scroll = 0;

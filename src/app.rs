@@ -77,10 +77,9 @@ impl App {
     /// Generate the text generation prompt based on current character count
     pub fn generate_text_prompt(&self) -> String {
         format!(
-            "日本の公的文書のような文章か新聞の記事のような文章を{}文字程度で生成してください。",
+            "日本の公的文書および新聞記事に共通する、客観的で簡潔かつ形式的な文体で、感情的表現や口語表現を避けた文章を{}文字程度で生成してください。",
             self.character_count
         )
-        .repeat(2)
     }
 
     /// Check if the current state indicates no training has started
