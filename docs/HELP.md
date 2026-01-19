@@ -65,12 +65,12 @@ AI が生成した文章を読んで要約を作成し、その要約を AI が�
 
 1. **設定ファイル (推奨)**:
    以下のパスに `config.toml` ファイルを作成し、API キーを記述します。
-
    - **Linux:** `~/.config/yomitore/config.toml`
    - **macOS:** `~/Library/Application\ Support/yomitore/config.toml`
    - **Windows:** `%APPDATA%\yomitore\config.toml`
 
    ファイル内容:
+
    ```toml
    api_key = "your_groq_api_key_here"
    ```
@@ -124,12 +124,12 @@ API リクエストは 60 秒でタイムアウトします。
 
 トレーニングの成果に応じてバッジを獲得できます：
 
-**🔥 連続正解バッジ**
+🔥 連続正解バッジ
 
 - 5 連、10 連、15 連...（最大 50 連）
 - 連続で正解するたびに獲得
 
-**⭐ 累積正解バッジ**
+⭐ 累積正解バッジ
 
 - 累積 5、累積 10、累積 15...（最大累積 100）
 - 総正解数に応じて獲得
