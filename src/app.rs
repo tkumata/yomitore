@@ -101,7 +101,7 @@ impl App {
     }
 
     /// Return to the appropriate view mode (Menu if no training, Normal otherwise)
-    pub fn return_from_report(&mut self) {
+    pub fn return_from_aux_view(&mut self) {
         if self.has_training_started() {
             self.view_mode = ViewMode::Normal;
             self.status_message = "Normal Mode. Press 'i' to edit.".to_string();

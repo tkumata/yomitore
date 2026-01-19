@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simulating loading stats.json
-    let home = dirs::home_dir().ok_or("Could not find home directory")?;
-    let path = home.join(".config").join("yomitore").join("stats.json");
+    let config_dir = dirs::config_dir().ok_or("Could not find config directory")?;
+    let path = config_dir.join("yomitore").join("stats.json");
 
     if !path.exists() {
         println!("stats.json not found");
