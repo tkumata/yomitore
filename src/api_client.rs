@@ -1,5 +1,6 @@
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::{future::Future, pin::Pin};
 
 // --- Data Structures for API Communication ---
 
@@ -38,6 +39,17 @@ const CHAT_COMPLETIONS_ENDPOINT: &str = "/chat/completions";
 const MODELS_ENDPOINT: &str = "/models";
 const CHAT_MODEL: &str = "openai/gpt-oss-120b";
 const API_TIMEOUT_SECS: u64 = 60; // API request timeout in seconds
+
+type ApiFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub trait ApiClientLike: Send + Sync {
+    fn generate_text(&self, prompt: String) -> ApiFuture<'_, Result<String, AppError>>;
+    fn evaluate_summary(
+        &self,
+        original_text: String,
+        summary_text: String,
+    ) -> ApiFuture<'_, Result<String, AppError>>;
+}
 
 pub struct ApiClient {
     client: reqwest::Client,
@@ -148,5 +160,109 @@ impl ApiClient {
         );
 
         self.send_chat_request(&prompt_content).await
+    }
+}
+
+impl ApiClientLike for ApiClient {
+    fn generate_text(&self, prompt: String) -> ApiFuture<'_, Result<String, AppError>> {
+        Box::pin(async move { ApiClient::generate_text(self, &prompt).await })
+    }
+
+    fn evaluate_summary(
+        &self,
+        original_text: String,
+        summary_text: String,
+    ) -> ApiFuture<'_, Result<String, AppError>> {
+        Box::pin(
+            async move { ApiClient::evaluate_summary(self, &original_text, &summary_text).await },
+        )
+    }
+}
+
+pub fn evaluation_passed(evaluation: &str) -> bool {
+    evaluation.contains("総合評価: 合格")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PASS_RESPONSE: &str = r#"- 適切な要約か: はい
+- 重要情報の抽出: 4
+- 簡潔性: 4
+- 正確性: 4
+- 改善点1: なし
+- 改善点2: なし
+- 改善点3: なし
+- 総合評価: 合格
+"#;
+
+    const FAIL_RESPONSE: &str = r#"- 適切な要約か: いいえ
+- 重要情報の抽出: 2
+- 簡潔性: 2
+- 正確性: 2
+- 改善点1: 情報不足
+- 改善点2: 要約が長すぎる
+- 改善点3: 原文の主旨を外れている
+- 総合評価: 不合格
+"#;
+
+    const BROKEN_RESPONSE: &str = "not a valid format";
+
+    struct TestApiClient {
+        evaluation: String,
+    }
+
+    impl TestApiClient {
+        fn new(evaluation: &str) -> Self {
+            Self {
+                evaluation: evaluation.to_string(),
+            }
+        }
+    }
+
+    impl ApiClientLike for TestApiClient {
+        fn generate_text(&self, _prompt: String) -> ApiFuture<'_, Result<String, AppError>> {
+            Box::pin(async { Ok("dummy text".to_string()) })
+        }
+
+        fn evaluate_summary(
+            &self,
+            _original_text: String,
+            _summary_text: String,
+        ) -> ApiFuture<'_, Result<String, AppError>> {
+            let evaluation = self.evaluation.clone();
+            Box::pin(async move { Ok(evaluation) })
+        }
+    }
+
+    #[tokio::test]
+    async fn evaluation_passes_for_valid_pass_response() {
+        let client = TestApiClient::new(PASS_RESPONSE);
+        let evaluation = client
+            .evaluate_summary("original".to_string(), "summary".to_string())
+            .await
+            .expect("evaluation response");
+        assert!(evaluation_passed(&evaluation));
+    }
+
+    #[tokio::test]
+    async fn evaluation_fails_for_valid_fail_response() {
+        let client = TestApiClient::new(FAIL_RESPONSE);
+        let evaluation = client
+            .evaluate_summary("original".to_string(), "summary".to_string())
+            .await
+            .expect("evaluation response");
+        assert!(!evaluation_passed(&evaluation));
+    }
+
+    #[tokio::test]
+    async fn evaluation_fails_for_broken_response() {
+        let client = TestApiClient::new(BROKEN_RESPONSE);
+        let evaluation = client
+            .evaluate_summary("original".to_string(), "summary".to_string())
+            .await
+            .expect("evaluation response");
+        assert!(!evaluation_passed(&evaluation));
     }
 }

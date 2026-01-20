@@ -9,7 +9,7 @@ mod tui;
 mod ui;
 
 use crate::{
-    api_client::ApiClient,
+    api_client::{evaluation_passed, ApiClient, ApiClientLike},
     app::{App, MENU_OPTIONS, ViewMode},
     error::AppError,
 };
@@ -57,10 +57,13 @@ async fn main() -> Result<(), AppError> {
                         // Get summary from text_area_state
                         let summary = app.text_area_state.value().to_string();
 
-                        match client.evaluate_summary(&app.original_text, &summary).await {
+                        match client
+                            .evaluate_summary(app.original_text.clone(), summary)
+                            .await
+                        {
                             Ok(evaluation) => {
                                 // Check for "総合評価: 合格" to determine pass/fail
-                                app.evaluation_passed = evaluation.contains("総合評価: 合格");
+                                app.evaluation_passed = evaluation_passed(&evaluation);
                                 app.evaluation_text = evaluation;
                                 app.show_evaluation_overlay = true;
                                 app.evaluation_overlay_scroll = 0;
@@ -332,7 +335,7 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 /// Generate text using the API client and update app state
 async fn generate_text_for_training(app: &mut App) {
     if let Some(client) = &app.api_client {
-        match client.generate_text(&app.generate_text_prompt()).await {
+        match client.generate_text(app.generate_text_prompt()).await {
             Ok(text) => {
                 app.original_text = text;
                 app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
@@ -345,13 +348,13 @@ async fn generate_text_for_training(app: &mut App) {
     }
 }
 
-async fn authenticate() -> Result<ApiClient, AppError> {
+async fn authenticate() -> Result<Box<dyn ApiClientLike>, AppError> {
     if let Some(key) = config::load_api_key()?
         && !key.is_empty()
     {
         let client = ApiClient::new(key);
         if client.validate_credentials().await.is_ok() {
-            return Ok(client);
+            return Ok(Box::new(client));
         }
     }
 
@@ -363,7 +366,7 @@ async fn authenticate() -> Result<ApiClient, AppError> {
             if config::save_api_key(&key).is_err() {
                 // Ignore saving error
             }
-            return Ok(client);
+            return Ok(Box::new(client));
         }
     }
     Err(AppError::InvalidApiKey)
