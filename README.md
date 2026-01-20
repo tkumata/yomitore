@@ -7,7 +7,6 @@
 このツールは Rust で開発されており、GroqCloud API を活用して、読解と要約の演習を継続的に提供します。主要なデスクトップオペレーティングシステム (Windows, macOS, Linux) でシームレスに動作するターミナルベースのアプリケーションです。
 
 ![Screenshot](./docs/images/screenshot-00.png)
-![Screenshot](./docs/images/screenshot-01.png)
 ![Screenshot](./docs/images/screenshot-02.png)
 ![Screenshot](./docs/images/screenshot-03.png)
 ![Screenshot](./docs/images/screenshot-04.png)

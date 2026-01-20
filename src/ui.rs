@@ -9,6 +9,7 @@ use ratatui::{
 
 /// Overlay size as percentage of screen
 const OVERLAY_SIZE_PERCENT: u16 = 75;
+const OVERLAY_MARGIN: u16 = 2;
 /// Minimum overlay dimensions
 const MIN_OVERLAY_WIDTH: u16 = 40;
 const MIN_OVERLAY_HEIGHT: u16 = 10;
@@ -137,20 +138,29 @@ fn clamp_textarea_scroll(state: &mut TextAreaState) {
 fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     // Get full screen area
     let full_area = frame.area();
+    let margin = OVERLAY_MARGIN;
+    let available_area = Rect {
+        x: full_area.x.saturating_add(margin),
+        y: full_area.y.saturating_add(margin),
+        width: full_area.width.saturating_sub(margin.saturating_mul(2)),
+        height: full_area.height.saturating_sub(margin.saturating_mul(2)),
+    };
 
     // Calculate center overlay area with minimum size guarantees
-    let overlay_width = full_area
+    let overlay_width = available_area
         .width
         .saturating_mul(OVERLAY_SIZE_PERCENT)
         .saturating_div(100)
-        .max(MIN_OVERLAY_WIDTH);
-    let overlay_height = full_area
+        .max(MIN_OVERLAY_WIDTH)
+        .min(available_area.width);
+    let overlay_height = available_area
         .height
         .saturating_mul(OVERLAY_SIZE_PERCENT)
         .saturating_div(100)
-        .max(MIN_OVERLAY_HEIGHT);
-    let x = full_area.width.saturating_sub(overlay_width) / 2;
-    let y = full_area.height.saturating_sub(overlay_height) / 2;
+        .max(MIN_OVERLAY_HEIGHT)
+        .min(available_area.height);
+    let x = available_area.x + available_area.width.saturating_sub(overlay_width) / 2;
+    let y = available_area.y + available_area.height.saturating_sub(overlay_height) / 2;
 
     let overlay_area = Rect {
         x,
@@ -160,9 +170,9 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     };
 
     // Create semi-transparent effect by dimming the background
-    // Fill entire screen with dark gray to dim the content behind
+    // Fill available area with dark gray to dim the content behind
     let dimmed_background = Block::default().style(Style::default().bg(Color::Rgb(20, 20, 20))); // Very dark gray
-    frame.render_widget(dimmed_background, full_area);
+    frame.render_widget(dimmed_background, available_area);
 
     // Clear the overlay area explicitly to reset all cells
     frame.render_widget(Clear, overlay_area);
