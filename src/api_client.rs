@@ -179,8 +179,190 @@ impl ApiClientLike for ApiClient {
     }
 }
 
-pub fn evaluation_passed(evaluation: &str) -> bool {
-    evaluation.contains("総合評価: 合格")
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OverallEvaluation {
+    Pass,
+    Fail,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EvaluationResult {
+    pub appropriate: bool,
+    pub importance: u8,
+    pub conciseness: u8,
+    pub accuracy: u8,
+    pub improvement1: String,
+    pub improvement2: String,
+    pub improvement3: String,
+    pub overall: OverallEvaluation,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParseEvaluationError {
+    DuplicateField(&'static str),
+    MissingField(&'static str),
+    InvalidValue(&'static str, String),
+}
+
+fn parse_score(field: &'static str, value: &str) -> Result<u8, ParseEvaluationError> {
+    let trimmed = value.trim();
+    let digits: String = trimmed
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
+        return Err(ParseEvaluationError::InvalidValue(
+            field,
+            value.to_string(),
+        ));
+    }
+    let score: u8 = digits
+        .parse()
+        .map_err(|_| ParseEvaluationError::InvalidValue(field, value.to_string()))?;
+    if !(1..=5).contains(&score) {
+        return Err(ParseEvaluationError::InvalidValue(field, value.to_string()));
+    }
+    Ok(score)
+}
+
+pub fn parse_evaluation(evaluation: &str) -> Result<EvaluationResult, ParseEvaluationError> {
+    let mut appropriate = None;
+    let mut importance = None;
+    let mut conciseness = None;
+    let mut accuracy = None;
+    let mut improvement1 = None;
+    let mut improvement2 = None;
+    let mut improvement3 = None;
+    let mut overall = None;
+
+    for line in evaluation.lines() {
+        let mut trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(stripped) = trimmed.strip_prefix('-') {
+            trimmed = stripped.trim_start();
+        } else if let Some(stripped) = trimmed.strip_prefix('・') {
+            trimmed = stripped.trim_start();
+        } else if let Some(stripped) = trimmed.strip_prefix('•') {
+            trimmed = stripped.trim_start();
+        } else if let Some(stripped) = trimmed.strip_prefix('−') {
+            trimmed = stripped.trim_start();
+        } else if let Some(stripped) = trimmed.strip_prefix('*') {
+            trimmed = stripped.trim_start();
+        }
+
+        let (key, value) = match trimmed.split_once(':') {
+            Some((key, value)) => (key, value),
+            None => continue,
+        };
+        let key = key.trim();
+        let value = value.trim();
+
+        match key {
+            "適切な要約か" => {
+                if appropriate.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("適切な要約か"));
+                }
+                let parsed = if value.starts_with("はい") {
+                    true
+                } else if value.starts_with("いいえ") {
+                    false
+                } else {
+                    return Err(ParseEvaluationError::InvalidValue(
+                        "適切な要約か",
+                        value.to_string(),
+                    ));
+                };
+                appropriate = Some(parsed);
+            }
+            "重要情報の抽出" => {
+                if importance.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("重要情報の抽出"));
+                }
+                importance = Some(parse_score("重要情報の抽出", value)?);
+            }
+            "簡潔性" => {
+                if conciseness.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("簡潔性"));
+                }
+                conciseness = Some(parse_score("簡潔性", value)?);
+            }
+            "正確性" => {
+                if accuracy.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("正確性"));
+                }
+                accuracy = Some(parse_score("正確性", value)?);
+            }
+            "改善点1" => {
+                if improvement1.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("改善点1"));
+                }
+                improvement1 = Some(value.to_string());
+            }
+            "改善点2" => {
+                if improvement2.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("改善点2"));
+                }
+                improvement2 = Some(value.to_string());
+            }
+            "改善点3" => {
+                if improvement3.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("改善点3"));
+                }
+                improvement3 = Some(value.to_string());
+            }
+            "総合評価" => {
+                if overall.is_some() {
+                    return Err(ParseEvaluationError::DuplicateField("総合評価"));
+                }
+                let parsed = if value.starts_with("合格") {
+                    OverallEvaluation::Pass
+                } else if value.starts_with("不合格") {
+                    OverallEvaluation::Fail
+                } else {
+                    return Err(ParseEvaluationError::InvalidValue(
+                        "総合評価",
+                        value.to_string(),
+                    ));
+                };
+                overall = Some(parsed);
+            }
+            _ => continue,
+        }
+    }
+
+    Ok(EvaluationResult {
+        appropriate: appropriate.ok_or(ParseEvaluationError::MissingField("適切な要約か"))?,
+        importance: importance.ok_or(ParseEvaluationError::MissingField("重要情報の抽出"))?,
+        conciseness: conciseness.ok_or(ParseEvaluationError::MissingField("簡潔性"))?,
+        accuracy: accuracy.ok_or(ParseEvaluationError::MissingField("正確性"))?,
+        improvement1: improvement1.ok_or(ParseEvaluationError::MissingField("改善点1"))?,
+        improvement2: improvement2.ok_or(ParseEvaluationError::MissingField("改善点2"))?,
+        improvement3: improvement3.ok_or(ParseEvaluationError::MissingField("改善点3"))?,
+        overall: overall.ok_or(ParseEvaluationError::MissingField("総合評価"))?,
+    })
+}
+
+pub fn format_evaluation_display(parsed: &EvaluationResult) -> String {
+    let appropriate = if parsed.appropriate { "はい" } else { "いいえ" };
+    let overall = match parsed.overall {
+        OverallEvaluation::Pass => "合格",
+        OverallEvaluation::Fail => "不合格",
+    };
+
+    format!(
+        "- 適切な要約か: {}\n- 重要情報の抽出: {}\n- 簡潔性: {}\n- 正確性: {}\n- 改善点1: {}\n- 改善点2: {}\n- 改善点3: {}\n- 総合評価: {}\n",
+        appropriate,
+        parsed.importance,
+        parsed.conciseness,
+        parsed.accuracy,
+        parsed.improvement1,
+        parsed.improvement2,
+        parsed.improvement3,
+        overall
+    )
 }
 
 #[cfg(test)]
@@ -243,7 +425,8 @@ mod tests {
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
             .expect("evaluation response");
-        assert!(evaluation_passed(&evaluation));
+        let parsed = parse_evaluation(&evaluation).expect("parse evaluation");
+        assert!(matches!(parsed.overall, OverallEvaluation::Pass));
     }
 
     #[tokio::test]
@@ -253,7 +436,8 @@ mod tests {
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
             .expect("evaluation response");
-        assert!(!evaluation_passed(&evaluation));
+        let parsed = parse_evaluation(&evaluation).expect("parse evaluation");
+        assert!(matches!(parsed.overall, OverallEvaluation::Fail));
     }
 
     #[tokio::test]
@@ -263,6 +447,47 @@ mod tests {
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
             .expect("evaluation response");
-        assert!(!evaluation_passed(&evaluation));
+        assert!(parse_evaluation(&evaluation).is_err());
+    }
+
+    #[test]
+    fn parse_evaluation_accepts_pass_response() {
+        let parsed = parse_evaluation(PASS_RESPONSE).expect("parse evaluation");
+        assert!(parsed.appropriate);
+        assert_eq!(parsed.importance, 4);
+        assert_eq!(parsed.conciseness, 4);
+        assert_eq!(parsed.accuracy, 4);
+        assert_eq!(parsed.improvement1, "なし");
+        assert!(matches!(parsed.overall, OverallEvaluation::Pass));
+    }
+
+    #[test]
+    fn parse_evaluation_accepts_out_of_order_lines() {
+        let response = r#"評価結果:
+- 総合評価: 合格 (OK)
+- 改善点3: なし
+- 正確性: 5/5
+- 改善点1: なし
+- 簡潔性: 3
+- 重要情報の抽出: 2
+- 改善点2: なし
+- 適切な要約か: はい
+"#;
+        let parsed = parse_evaluation(response).expect("parse evaluation");
+        assert_eq!(parsed.importance, 2);
+        assert_eq!(parsed.conciseness, 3);
+        assert_eq!(parsed.accuracy, 5);
+        assert!(matches!(parsed.overall, OverallEvaluation::Pass));
+    }
+
+    #[test]
+    fn parse_evaluation_rejects_broken_response() {
+        assert!(parse_evaluation(BROKEN_RESPONSE).is_err());
+    }
+
+    #[test]
+    fn parse_evaluation_rejects_out_of_range_score() {
+        let response = PASS_RESPONSE.replace("重要情報の抽出: 4", "重要情報の抽出: 6");
+        assert!(parse_evaluation(&response).is_err());
     }
 }

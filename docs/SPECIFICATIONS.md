@@ -250,20 +250,36 @@ pub struct TrainingStats {
 pub struct TrainingResult {
     pub timestamp: DateTime<Local>,
     pub passed: bool,
+    pub evaluation: Option<EvaluationScores>,
 }
 
 pub enum BadgeType {
     ConsecutiveStreak(usize),
     CumulativeMilestone(usize),
 }
+
+pub struct EvaluationScores {
+    pub appropriate: bool,
+    pub importance: u8,
+    pub conciseness: u8,
+    pub accuracy: u8,
+    pub improvement1: String,
+    pub improvement2: String,
+    pub improvement3: String,
+    pub overall_passed: bool,
+}
 ```
 
 **バッジ授与ロジック**:
 
-- `add_result(passed: bool)` で結果を追加
+- `add_result_with_evaluation(passed: bool, evaluation: Option<EvaluationScores>)` で結果を追加
 - 連続正解時: `current_streak`をインクリメント、5 の倍数でバッジ授与
 - 不正解時: `current_streak`をリセット
 - 累積正解: 全結果から正解数をカウント、5 の倍数でバッジ授与
+
+**評価スコア集計**:
+
+- 直近30日の `EvaluationScores` を集計して平均・中央値・件数を表示する
 
 **データ永続化**:
 
@@ -283,6 +299,11 @@ pub enum BadgeType {
 - `ApiClient` をトレイト化し、本番実装とテスト実装を差し替え可能にする
 - 評価結果のパースと合否判定は純粋関数として切り出し、ユニットテスト対象とする
 - テストはモジュール名で絞り込み実行できる構成にする
+- 評価結果パースは8行必須・順序自由で解釈し、数値は 1〜5 のみ許可、壊れた形式は Err とする
+- 評価結果の表示は固定順とし、数値は 1〜5 をそのまま表示する
+- パース失敗時は「評価結果の形式が不正です」と表示する
+- レポートは直近30日の平均・中央値・件数を表示する
+- 評価結果の余分な行は無視し、先頭の箇条書き記号が異なっていても解釈する
 
 **テスト用固定レスポンス**:
 
