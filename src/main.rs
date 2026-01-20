@@ -59,13 +59,8 @@ async fn main() -> Result<(), AppError> {
 
                         match client.evaluate_summary(&app.original_text, &summary).await {
                             Ok(evaluation) => {
-                                // Check if the evaluation starts with "はい" (yes) to determine pass/fail
-                                // More robust: only check the first line
-                                app.evaluation_passed = evaluation
-                                    .lines()
-                                    .next()
-                                    .map(|line| line.trim().starts_with("はい"))
-                                    .unwrap_or(false);
+                                // Check for "総合評価: 合格" to determine pass/fail
+                                app.evaluation_passed = evaluation.contains("総合評価: 合格");
                                 app.evaluation_text = evaluation;
                                 app.show_evaluation_overlay = true;
                                 app.evaluation_overlay_scroll = 0;
@@ -188,7 +183,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                 if app.view_mode == ViewMode::Report {
                     match key.code {
                         KeyCode::Char('r') => {
-                            app.return_from_report();
+                            app.return_from_aux_view();
                         }
                         KeyCode::Char('q') => {
                             app.should_quit = true;
@@ -202,7 +197,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                 if app.view_mode == ViewMode::Help {
                     match key.code {
                         KeyCode::Char('h') => {
-                            app.return_from_report();
+                            app.return_from_aux_view();
                             app.help_scroll = 0;
                         }
                         KeyCode::Down | KeyCode::Char('j') => {
@@ -247,7 +242,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                     KeyCode::Char('r') => {
                         // Toggle report
                         if app.view_mode == ViewMode::Report {
-                            app.return_from_report();
+                            app.return_from_aux_view();
                         } else {
                             app.view_mode = ViewMode::Report;
                             app.status_message = "Report. Press 'r' to close.".to_string();
@@ -256,7 +251,7 @@ async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                     KeyCode::Char('h') => {
                         // Toggle help
                         if app.view_mode == ViewMode::Help {
-                            app.return_from_report();
+                            app.return_from_aux_view();
                             app.help_scroll = 0;
                         } else {
                             app.view_mode = ViewMode::Help;

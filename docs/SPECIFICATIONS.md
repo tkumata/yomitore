@@ -1,14 +1,15 @@
 # 技術仕様書: 読解力トレーニング CLI (yomitore)
 
-**バージョン**: 0.1.9
-**最終更新日**: 2025-12-06
+**バージョン**: 0.1.10
+**最終更新日**: 2026-01-19
 
 ## 改訂履歴
 
-| Version | Date        | Change Log                                          |
-| ------- | ----------- | --------------------------------------------------- |
-| 0.1.9   | 2025-12-06  | API timeout, Define const, Improving error handling |
-| 0.1.0   | 1st Release | 1st Release                                         |
+| Version | Date        | Change Log                                                       |
+| ------- | ----------- | ---------------------------------------------------------------- |
+| 0.1.10  | 2026-01-19  | Update prompt strategy (Prompt Repetition), evaluation logic fix |
+| 0.1.9   | 2025-12-06  | API timeout, Define const, Improving error handling              |
+| 0.1.0   | 1st Release | 1st Release                                                      |
 
 ## 1. 概要
 
@@ -29,37 +30,39 @@
 - **`help.rs`**: ヘルプコンテンツの管理
 - **`error.rs`**: アプリケーション固有のエラー型（thiserror 使用）
 
+文字列生成と要約評価には生成 AI を利用してますが、<https://arxiv.org/abs/2512.14982> を参考にしてプロンプトを繰り返す手法 (Prompt Repetition) を採用しています。
+
 ### アーキテクチャ図
 
-```
+```text
 ┌───────────────────────────────────────────┐
 │                  main.rs                  │
 │  (Entry Point, Main Loop, Event Handling) │
-└─────────────┬─────────────────────────────┘
-              │
-    ┌─────────┼─────────────────────────────────┐
-    │         │                                 │
-    ▼         ▼                                 ▼
-┌────────┐ ┌────────┐                      ┌──────────┐
-│ app.rs │ │ tui.rs │                      │ error.rs │
-└────┬───┘ └────┬───┘                      └──────────┘
+└───────────────┬───────────────────────────┘
+                │
+    ┌───────────┼───────────┐
+    │           │           │
+    ▼           ▼           ▼
+┌────────┐ ┌────────┐ ┌──────────┐
+│ app.rs │ │ tui.rs │ │ error.rs │
+└────┬───┘ └────┬───┘ └──────────┘
      │          │
      │          ▼
      │     ┌─────────┐
-     │     │  ui.rs  │──────┬──────────────┬──────────┐
-     │     └─────────┘      │              │          │
-     │                      ▼              ▼          ▼
-     │                 ┌──────────┐  ┌─────────┐ ┌─────────┐
-     │                 │reports.rs│  │ help.rs │ │         │
-     │                 └──────────┘  └─────────┘ │         │
-     │                                           │         │
-     └────────┬──────────────────────────────────┘         │
-              │                                            │
-              ▼                                            ▼
-      ┌──────────────┐                             ┌──────────────┐
-      │api_client.rs │                             │  config.rs   │
-      │  (Groq API)  │                             │  stats.rs    │
-      └──────────────┘                             └──────────────┘
+     │     │  ui.rs  │──────┬────────────┬────────┐
+     │     └─────────┘      │            │        │
+     │                      ▼            ▼        │
+     │                 ┌──────────┐ ┌─────────┐   │
+     │                 │reports.rs│ │ help.rs │   │
+     │                 └──────────┘ └─────────┘   │
+     │                                            ▼
+     └────────┬───────────────────────────────────┐
+              │                                   │
+              ▼                                   ▼
+      ┌──────────────┐                     ┌──────────────┐
+      │api_client.rs │                     │  config.rs   │
+      │  (Groq API)  │                     │  stats.rs    │
+      └──────────────┘                     └──────────────┘
 ```
 
 ## 3. 機能別技術仕様
@@ -69,14 +72,10 @@
 **実装関数**: `authenticate() -> Result<ApiClient, AppError>`
 
 1. **設定ファイルからの読み込み**:
-
    - `config::load_api_key()` で TOML 形式の設定ファイルを読み込む
    - パス: `~/.config/yomitore/config.toml`
-
 2. **環境変数からの読み込み**:
-
    - `env::var("GROQ_API_KEY")` で環境変数を確認
-
 3. **認証検証**:
    - **エンドポイント**: `GET https://api.groq.com/openai/v1/models`
    - **タイムアウト**: 60 秒
@@ -92,17 +91,32 @@
 - **タイムアウト**: 60 秒（`API_TIMEOUT_SECS`定数）
 - **モデル**: `openai/gpt-oss-120b`（`CHAT_MODEL`定数）
 - **リクエストボディ**:
+  ランダムにプロンプトを変更する。
+
   ```json
   {
     "model": "openai/gpt-oss-120b",
     "messages": [
       {
         "role": "user",
-        "content": "日本語の公的文書のようなお堅い文章をN文字程度で生成してください。"
+        "content": "日本の公的文書（省庁や自治体が発行する通知や報告書）の文体で、感情表現や口語表現を避け、形式的かつ客観的な文章をN文字程度で生成してください。"
       }
     ]
   }
   ```
+
+  ```json
+  {
+    "model": "openai/gpt-oss-120b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "日本の新聞記事の本文として、事実関係を中心に客観的かつ簡潔な文体で文章をN文字程度で生成してください。"
+      }
+    ]
+  }
+  ```
+
 - **レスポンス処理**:
   - `choices[0].message.content` から生成文を抽出
   - null の場合は空文字列を返す
@@ -135,16 +149,29 @@
 - **タイムアウト**: 60 秒
 - **プロンプト**:
 
-  ```
-  以下の『原文』を『要約文』は適切に要約できていますか？ 「はい」か「いいえ」で端的に答えた上で、以下の観点で評価してください。
+  ```text
+  以下の「原文」と「要約文」を比較し、要約として適切か評価してください。
 
-  - 重要情報の抽出(5段階):主要なポイントを捉えているか
-  - 簡潔性(5段階): 冗長な表現がないか
-  - 正確性(5段階): 事実の誤認や歪曲がないか
+  # 評価ルール
+  - 出力は必ず以下のフォーマットのみ使用すること
+  - 数値は 1〜5 の整数のみ
+  - 余計な文章や注釈は禁止
+  - Markdown 記法は禁止
+
+  # 出力フォーマット(厳守)
+  - 適切な要約か: はい／いいえ
+  - 重要情報の抽出: [1-5]
+  - 簡潔性: [1-5]
+  - 正確性: [1-5]
+  - 改善点1: ...
+  - 改善点2: ...
+  - 改善点3: ...
   - 総合評価: 合格/不合格
-  - 具体的な改善点: 3つ挙げてください。
 
-  表示は CLI ターミナルなので markdown 形式は禁止です
+  # 採点基準
+  - 5: 非常に優れている
+  - 3: 可もなく不可もなく
+  - 1: 明確な問題がある
 
   # 原文
   {original_text}
@@ -153,7 +180,9 @@
   {summary_text}
   ```
 
-- **合否判定**: 評価結果の最初の行が「はい」で始まるかチェック（`evaluation.lines().next()...starts_with("はい")`）
+  ※ 実装上は上記の内容全体を `format!(...).repeat(2)` を使用して2回繰り返し、LLMへ送信する。
+
+- **合否判定**: 評価結果のテキスト内に「総合評価: 合格」という文字列が含まれているかチェック（`evaluation.contains("総合評価: 合格")`）
 
 ### 3.5. UI レンダリング (ui.rs, tui.rs)
 
@@ -204,8 +233,8 @@ app.terminal_height = frame.area().height;
 **定数定義**:
 
 ```rust
-const BADGE_INTERVAL: usize = 5;           // バッジ獲得間隔
-const MAX_CONSECUTIVE_STREAK: usize = 50;  // 最大連続正解
+const BADGE_INTERVAL: usize = 5;             // バッジ獲得間隔
+const MAX_CONSECUTIVE_STREAK: usize = 50;    // 最大連続正解
 const MAX_CUMULATIVE_MILESTONE: usize = 100; // 最大累積正解
 ```
 
@@ -366,12 +395,14 @@ pub enum AppError {
 1. **main 関数**: `Result<(), AppError>`を返し、最上位でエラーをキャッチ
 2. **API 通信**: タイムアウト時は`reqwest::Error`が発生し、`AppError::ApiError`に変換
 3. **統計保存失敗**: ユーザーに通知し、処理を継続
+
    ```rust
    if let Err(e) = app.stats.save() {
        app.status_message = format!("Warning: Failed to save stats: {}", e);
        eprintln!("Failed to save stats: {}", e);
    }
    ```
+
 4. **ターミナル復元**: panic やエラー時も`tui::restore()`を確実に実行
 
 ## 6. 定数管理
@@ -433,15 +464,15 @@ edition = "2024"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 dirs = "6.0"
 toml = "0.9"
-ratatui = { version = "0.29", features = ["crossterm", "unstable-rendered-line-info"] }
+ratatui = { version = "0.30", features = ["crossterm", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
-rat-text = "2.7"
+rat-text = "3.0"
 chrono = { version = "0.4", features = ["serde"] }
 ```
 
@@ -491,14 +522,10 @@ cargo clippy --all-targets --all-features
 ## 10. セキュリティ考慮事項
 
 1. **API キー保護**:
-
    - ファイルパーミッション 600（Unix 系）
-
 2. **入力検証**:
-
    - API 応答の`content`フィールドが null の場合を考慮
    - ファイル I/O 時の適切なエラーハンドリング
-
 3. **データ永続化**:
    - 設定ファイルは暗号化せず、OS のファイルシステム保護に依存
    - 統計データは平文 JSON（機密情報を含まない）

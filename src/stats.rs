@@ -117,8 +117,8 @@ impl TrainingStats {
     }
 
     fn get_stats_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let home = dirs::home_dir().ok_or("Could not find home directory")?;
-        Ok(home.join(".config").join("yomitore").join("stats.json"))
+        let config_dir = dirs::config_dir().ok_or("Could not find config directory")?;
+        Ok(config_dir.join("yomitore").join("stats.json"))
     }
 
     /// Recalculate current streak from the end of results

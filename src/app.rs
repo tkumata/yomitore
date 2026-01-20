@@ -1,5 +1,6 @@
 use crate::api_client::ApiClient;
 use crate::stats::TrainingStats;
+use rand::Rng;
 use rat_text::text_area::{TextAreaState, TextWrap};
 
 #[derive(PartialEq, Clone, Copy)]
@@ -76,10 +77,21 @@ impl App {
 
     /// Generate the text generation prompt based on current character count
     pub fn generate_text_prompt(&self) -> String {
+        let mut rng = rand::rng();
+
+        let style_prompt = if rng.random_bool(0.7) {
+            // 公的文書
+            "日本の公的文書（省庁や自治体が発行する通知や報告書）の文体で、感情表現や口語表現を避け、形式的かつ客観的な文章を"
+        } else {
+            // 新聞記事
+            "日本の新聞記事の本文として、事実関係を中心に客観的かつ簡潔な文体で文章を"
+        };
+
         format!(
-            "日本語の公的文書のようなお堅い文章を{}文字程度で生成してください。",
-            self.character_count
+            "{}{}文字程度で生成してください。",
+            style_prompt, self.character_count
         )
+        .repeat(2)
     }
 
     /// Check if the current state indicates no training has started
@@ -89,7 +101,7 @@ impl App {
     }
 
     /// Return to the appropriate view mode (Menu if no training, Normal otherwise)
-    pub fn return_from_report(&mut self) {
+    pub fn return_from_aux_view(&mut self) {
         if self.has_training_started() {
             self.view_mode = ViewMode::Normal;
             self.status_message = "Normal Mode. Press 'i' to edit.".to_string();
