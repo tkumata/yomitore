@@ -55,6 +55,42 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     lines
 }
 
+fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
+    let summary = stats.get_recent_evaluation_summary(DAYS_IN_MONTH);
+    let mut lines = Vec::new();
+
+    lines.push(Line::from(Span::styled(
+        "評価スコア (直近30日)",
+        Style::default().fg(Color::Cyan).bold(),
+    )));
+
+    if summary.count == 0 {
+        lines.push(Line::from("評価スコア: なし"));
+        lines.push(Line::from("件数: 0"));
+        return lines;
+    }
+
+    let importance = summary.importance.as_ref().unwrap();
+    let conciseness = summary.conciseness.as_ref().unwrap();
+    let accuracy = summary.accuracy.as_ref().unwrap();
+
+    lines.push(Line::from(format!(
+        "重要情報: 平均 {:.1} / 中央値 {:.1}",
+        importance.average, importance.median
+    )));
+    lines.push(Line::from(format!(
+        "簡潔性: 平均 {:.1} / 中央値 {:.1}",
+        conciseness.average, conciseness.median
+    )));
+    lines.push(Line::from(format!(
+        "正確性: 平均 {:.1} / 中央値 {:.1}",
+        accuracy.average, accuracy.median
+    )));
+    lines.push(Line::from(format!("件数: {}", summary.count)));
+
+    lines
+}
+
 pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
     let block = Block::default()
         .title("レポート (r: 閉じる)")
@@ -98,13 +134,31 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(horizontal_layout[0]);
     frame.render_widget(monthly_block, horizontal_layout[0]);
-    let heatmap = create_heatmap_without_badges(
-        &daily_stats,
-        monthly_inner.width as usize,
-        monthly_inner.height as usize,
-    );
-    let paragraph = Paragraph::new(heatmap);
-    frame.render_widget(paragraph, monthly_inner);
+    if monthly_inner.height >= 6 {
+        let monthly_layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(6), Constraint::Min(0)])
+            .split(monthly_inner);
+        let summary_text = Text::from(render_evaluation_summary(stats));
+        let summary_paragraph = Paragraph::new(summary_text);
+        frame.render_widget(summary_paragraph, monthly_layout[0]);
+
+        let heatmap = create_heatmap_without_badges(
+            &daily_stats,
+            monthly_layout[1].width as usize,
+            monthly_layout[1].height as usize,
+        );
+        let paragraph = Paragraph::new(heatmap);
+        frame.render_widget(paragraph, monthly_layout[1]);
+    } else {
+        let heatmap = create_heatmap_without_badges(
+            &daily_stats,
+            monthly_inner.width as usize,
+            monthly_inner.height as usize,
+        );
+        let paragraph = Paragraph::new(heatmap);
+        frame.render_widget(paragraph, monthly_inner);
+    }
 
     // Render weekly report on the right
     let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW);
@@ -180,31 +234,7 @@ fn create_heatmap_without_badges(
                 let correct = stats.correct;
 
                 // Determine color intensity based on correct answers
-                let (symbol, style) = match (total, correct) {
-                    (0, _) => ("--", Style::default().fg(Color::DarkGray)),
-                    (_, 0) => ("##", Style::default().fg(Color::Red)),
-                    (t, c) if c == t => {
-                        // All correct - varying shades of green
-                        if t >= 5 {
-                            ("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold())
-                        } else if t >= 3 {
-                            ("##", Style::default().fg(Color::Green))
-                        } else {
-                            ("##", Style::default().fg(Color::LightGreen))
-                        }
-                    }
-                    (t, c) => {
-                        // Mixed results
-                        let ratio = c as f64 / t as f64;
-                        if ratio >= 0.7 {
-                            ("##", Style::default().fg(Color::LightGreen))
-                        } else if ratio >= 0.4 {
-                            ("##", Style::default().fg(Color::Yellow))
-                        } else {
-                            ("##", Style::default().fg(Color::Red))
-                        }
-                    }
-                };
+                let (symbol, style) = get_heatmap_cell_style(total, correct);
 
                 line_spans.push(Span::styled(format!(" {} ", symbol), style));
             } else {
@@ -238,8 +268,8 @@ fn create_heatmap_without_badges(
 
 fn create_bar_chart_without_badges(
     weekly_stats: &[WeeklyStats],
-    _width: usize,
-    height: usize,
+    width: usize,
+    _height: usize,
 ) -> Text<'static> {
     let mut lines = Vec::new();
 
@@ -250,21 +280,14 @@ fn create_bar_chart_without_badges(
         .max()
         .unwrap_or(1);
 
-    let chart_height = (height.saturating_sub(6)).max(8);
+    // Calculate max bar width based on available width
+    // Reserve space for label "第XX週: " (~7 chars) and number suffix (~4 chars)
+    let max_bar_width = width.saturating_sub(15).max(10);
 
     // Display each week
     for stats in weekly_stats {
-        let correct_bars = if max_value > 0 {
-            (stats.correct as f64 / max_value as f64 * chart_height as f64) as usize
-        } else {
-            0
-        };
-
-        let incorrect_bars = if max_value > 0 {
-            (stats.incorrect as f64 / max_value as f64 * chart_height as f64) as usize
-        } else {
-            0
-        };
+        let correct_bars = calculate_bar_height(stats.correct, max_value, max_bar_width);
+        let incorrect_bars = calculate_bar_height(stats.incorrect, max_value, max_bar_width);
 
         let mut line_spans = vec![Span::raw(format!("第{}週: ", stats.week_number))];
 
@@ -299,4 +322,37 @@ fn create_bar_chart_without_badges(
     ]));
 
     Text::from(lines)
+}
+
+fn get_heatmap_cell_style(total: usize, correct: usize) -> (&'static str, Style) {
+    if total == 0 {
+        return ("--", Style::default().fg(Color::DarkGray));
+    }
+
+    if correct == 0 {
+        return ("##", Style::default().fg(Color::Red));
+    }
+
+    if correct == total {
+        return ("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold());
+    }
+
+    let ratio = correct as f64 / total as f64;
+    let color = if ratio >= 0.8 {
+        Color::Green
+    } else if ratio >= 0.5 {
+        Color::LightGreen
+    } else {
+        Color::Yellow
+    };
+
+    ("##", Style::default().fg(color))
+}
+
+fn calculate_bar_height(value: usize, max_value: usize, max_len: usize) -> usize {
+    if max_value == 0 {
+        return 0;
+    }
+    let len = (value as f64 * max_len as f64 / max_value as f64).round() as usize;
+    len.min(max_len)
 }

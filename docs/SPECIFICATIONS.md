@@ -250,20 +250,36 @@ pub struct TrainingStats {
 pub struct TrainingResult {
     pub timestamp: DateTime<Local>,
     pub passed: bool,
+    pub evaluation: Option<EvaluationScores>,
 }
 
 pub enum BadgeType {
     ConsecutiveStreak(usize),
     CumulativeMilestone(usize),
 }
+
+pub struct EvaluationScores {
+    pub appropriate: bool,
+    pub importance: u8,
+    pub conciseness: u8,
+    pub accuracy: u8,
+    pub improvement1: String,
+    pub improvement2: String,
+    pub improvement3: String,
+    pub overall_passed: bool,
+}
 ```
 
 **バッジ授与ロジック**:
 
-- `add_result(passed: bool)` で結果を追加
+- `add_result_with_evaluation(passed: bool, evaluation: Option<EvaluationScores>)` で結果を追加
 - 連続正解時: `current_streak`をインクリメント、5 の倍数でバッジ授与
 - 不正解時: `current_streak`をリセット
 - 累積正解: 全結果から正解数をカウント、5 の倍数でバッジ授与
+
+**評価スコア集計**:
+
+- 直近30日の `EvaluationScores` を集計して平均・中央値・件数を表示する
 
 **データ永続化**:
 
@@ -273,6 +289,55 @@ pub enum BadgeType {
 - 読み込み: `load() -> Result<Self, Box<dyn std::error::Error>>`
   - 存在しない場合は新規作成
   - 読み込み後、`recalculate_streak()`と`rebuild_badges_from_history()`を実行
+
+### 3.7. テスト戦略 (api_client.rs, app.rs)
+
+**目的**: 実際の GroqCloud API を利用せずに、評価結果の判定までを自動テストする。
+
+**方針**:
+
+- `ApiClient` をトレイト化し、本番実装とテスト実装を差し替え可能にする
+- 評価結果のパースと合否判定は純粋関数として切り出し、ユニットテスト対象とする
+- テストはモジュール名で絞り込み実行できる構成にする
+- 評価結果パースは8行必須・順序自由で解釈し、数値は 1〜5 のみ許可、壊れた形式は Err とする
+- 評価結果の表示は固定順とし、数値は 1〜5 をそのまま表示する
+- パース失敗時は「評価結果の形式が不正です」と表示する
+- レポートは直近30日の平均・中央値・件数を表示する
+- 評価結果の余分な行は無視し、先頭の箇条書き記号が異なっていても解釈する
+
+**テスト用固定レスポンス**:
+
+```text
+- 適切な要約か: はい／いいえ
+- 重要情報の抽出: 4
+- 簡潔性: 4
+- 正確性: 4
+- 改善点1: なし
+- 改善点2: なし
+- 改善点3: なし
+- 総合評価: 合格
+```
+
+```text
+- 適切な要約か: いいえ
+- 重要情報の抽出: 2
+- 簡潔性: 2
+- 正確性: 2
+- 改善点1: 情報不足
+- 改善点2: 要約が長すぎる
+- 改善点3: 原文の主旨を外れている
+- 総合評価: 不合格
+```
+
+```text
+not a valid format
+```
+
+**最低限のテストケース**:
+
+- 合格 1 件
+- 不合格 1 件
+- 壊れた形式 1 件
 
 ## 4. データ構造
 
@@ -478,23 +543,28 @@ chrono = { version = "0.4", features = ["serde"] }
 
 ## 8. テスト
 
-### 8.1. ユニットテスト (stats.rs)
+### 8.1. ユニットテスト
 
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
+各モジュールに `#[cfg(test)]` ブロックを設け、純粋関数を中心にテストを実装している。
 
-    #[test]
-    fn test_badge_awarding_consecutive() { ... }
+#### 8.1.1. 統計管理 (`stats.rs`)
+- バッジ授与ロジック（連続正解、累積正解）
+- 履歴に基づくストリークの再計算
+- 日次/週次統計の集計ロジック
+- 中央値、平均計算のエッジケース
 
-    #[test]
-    fn test_streak_reset_on_incorrect() { ... }
+#### 8.1.2. APIクライアント (`api_client.rs`)
+- 評価結果パースロジック
+  - 箇条書き記号の揺らぎ（`-`, `・`, `•`, `*`, `−`）の許容
+  - スコア抽出（数値、数値を含む文字列、範囲外）
+  - フィールドの欠落・重複の検知
+- 評価結果表示用フォーマットの整合性
 
-    #[test]
-    fn test_rebuild_badges_from_history() { ... }
-}
-```
+#### 8.1.3. 設定管理 (`config.rs`)
+- `Config` 構造体の TOML シリアライズ/デシリアライズ
+
+#### 8.1.4. エラー定義 (`error.rs`)
+- 各エラー型のカスタム表示メッセージの検証
 
 ### 8.2. テスト実行
 

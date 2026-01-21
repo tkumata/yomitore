@@ -1,4 +1,4 @@
-use crate::api_client::ApiClient;
+use crate::api_client::ApiClientLike;
 use crate::stats::TrainingStats;
 use rand::Rng;
 use rat_text::text_area::{TextAreaState, TextWrap};
@@ -16,7 +16,7 @@ pub const MENU_OPTIONS: [u16; 4] = [400, 720, 1440, 2880];
 
 /// Application state
 pub struct App {
-    pub api_client: Option<ApiClient>,
+    pub api_client: Option<Box<dyn ApiClientLike>>,
     pub is_editing: bool,
     pub original_text: String,
     pub original_text_scroll: u16,

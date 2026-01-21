@@ -9,9 +9,12 @@ mod tui;
 mod ui;
 
 use crate::{
-    api_client::ApiClient,
+    api_client::{
+        format_evaluation_display, parse_evaluation, ApiClient, ApiClientLike, OverallEvaluation,
+    },
     app::{App, MENU_OPTIONS, ViewMode},
     error::AppError,
+    stats::EvaluationScores,
 };
 use rat_text::event::HandleEvent;
 use ratatui::{
@@ -57,24 +60,53 @@ async fn main() -> Result<(), AppError> {
                         // Get summary from text_area_state
                         let summary = app.text_area_state.value().to_string();
 
-                        match client.evaluate_summary(&app.original_text, &summary).await {
+                        match client
+                            .evaluate_summary(app.original_text.clone(), summary)
+                            .await
+                        {
                             Ok(evaluation) => {
-                                // Check for "総合評価: 合格" to determine pass/fail
-                                app.evaluation_passed = evaluation.contains("総合評価: 合格");
-                                app.evaluation_text = evaluation;
-                                app.show_evaluation_overlay = true;
-                                app.evaluation_overlay_scroll = 0;
-                                app.is_evaluating = false;
-                                app.status_message =
-                                    "Evaluation complete. Press 'e' to toggle, 'n' for next."
-                                        .to_string();
+                                match parse_evaluation(&evaluation) {
+                                    Ok(parsed) => {
+                                        app.evaluation_passed =
+                                            matches!(parsed.overall, OverallEvaluation::Pass);
+                                        app.evaluation_text = format_evaluation_display(&parsed);
+                                        app.show_evaluation_overlay = true;
+                                        app.evaluation_overlay_scroll = 0;
+                                        app.is_evaluating = false;
+                                        app.status_message = "評価が完了しました。'e'で切替、'n'で次へ。"
+                                            .to_string();
 
-                                // Save the result to stats
-                                app.stats.add_result(app.evaluation_passed);
-                                if let Err(e) = app.stats.save() {
-                                    app.status_message =
-                                        format!("Warning: Failed to save stats: {}", e);
-                                    eprintln!("Failed to save stats: {}", e);
+                                        let scores = EvaluationScores {
+                                            appropriate: parsed.appropriate,
+                                            importance: parsed.importance,
+                                            conciseness: parsed.conciseness,
+                                            accuracy: parsed.accuracy,
+                                            improvement1: parsed.improvement1,
+                                            improvement2: parsed.improvement2,
+                                            improvement3: parsed.improvement3,
+                                            overall_passed: app.evaluation_passed,
+                                        };
+
+                                        app.stats.add_result_with_evaluation(
+                                            app.evaluation_passed,
+                                            Some(scores),
+                                        );
+                                        if let Err(e) = app.stats.save() {
+                                            app.status_message =
+                                                format!("警告: 統計の保存に失敗しました: {}", e);
+                                            eprintln!("Failed to save stats: {}", e);
+                                        }
+                                    }
+                                    Err(_) => {
+                                        app.evaluation_text =
+                                            "評価結果の形式が不正です".to_string();
+                                        app.evaluation_passed = false;
+                                        app.show_evaluation_overlay = true;
+                                        app.evaluation_overlay_scroll = 0;
+                                        app.is_evaluating = false;
+                                        app.status_message =
+                                            "評価結果の形式が不正です".to_string();
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -332,7 +364,7 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 /// Generate text using the API client and update app state
 async fn generate_text_for_training(app: &mut App) {
     if let Some(client) = &app.api_client {
-        match client.generate_text(&app.generate_text_prompt()).await {
+        match client.generate_text(app.generate_text_prompt()).await {
             Ok(text) => {
                 app.original_text = text;
                 app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
@@ -345,13 +377,13 @@ async fn generate_text_for_training(app: &mut App) {
     }
 }
 
-async fn authenticate() -> Result<ApiClient, AppError> {
+async fn authenticate() -> Result<Box<dyn ApiClientLike>, AppError> {
     if let Some(key) = config::load_api_key()?
         && !key.is_empty()
     {
         let client = ApiClient::new(key);
         if client.validate_credentials().await.is_ok() {
-            return Ok(client);
+            return Ok(Box::new(client));
         }
     }
 
@@ -363,7 +395,7 @@ async fn authenticate() -> Result<ApiClient, AppError> {
             if config::save_api_key(&key).is_err() {
                 // Ignore saving error
             }
-            return Ok(client);
+            return Ok(Box::new(client));
         }
     }
     Err(AppError::InvalidApiKey)
