@@ -585,4 +585,66 @@ mod tests {
         assert_eq!(summary.accuracy.as_ref().unwrap().average, 4.0);
         assert_eq!(summary.accuracy.as_ref().unwrap().median, 4.0);
     }
+
+    #[test]
+    fn test_calculate_median_edge_cases() {
+        assert_eq!(calculate_median(&[5]), 5.0);
+        assert_eq!(calculate_median(&[1, 5]), 3.0);
+        assert_eq!(calculate_median(&[10, 2, 5]), 5.0);
+        assert_eq!(calculate_median(&[1, 2, 3, 4]), 2.5);
+    }
+
+    #[test]
+    fn test_calculate_score_stats_handles_empty() {
+        assert!(calculate_score_stats(&[]).is_none());
+    }
+
+    #[test]
+    fn test_recalculate_streak_variations() {
+        let mut stats = TrainingStats::new();
+
+        // Empty
+        stats.recalculate_streak();
+        assert_eq!(stats.current_streak, 0);
+
+        // All passed
+        for _ in 0..3 {
+            stats.results.push(TrainingResult {
+                timestamp: Local::now(),
+                passed: true,
+                evaluation: None,
+            });
+        }
+        stats.recalculate_streak();
+        assert_eq!(stats.current_streak, 3);
+
+        // Mixed
+        stats.results.push(TrainingResult {
+            timestamp: Local::now(),
+            passed: false,
+            evaluation: None,
+        });
+        stats.results.push(TrainingResult {
+            timestamp: Local::now(),
+            passed: true,
+            evaluation: None,
+        });
+        stats.recalculate_streak();
+        assert_eq!(stats.current_streak, 1);
+    }
+
+    #[test]
+    fn test_badge_display_text_japanese() {
+        let now = Local::now();
+        let b1 = Badge {
+            badge_type: BadgeType::ConsecutiveStreak(5),
+            earned_at: now,
+        };
+        let b2 = Badge {
+            badge_type: BadgeType::CumulativeMilestone(10),
+            earned_at: now,
+        };
+        assert_eq!(b1.get_display_text(), "5連");
+        assert_eq!(b2.get_display_text(), "累積10");
+    }
 }

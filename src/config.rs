@@ -65,3 +65,30 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
 
     Ok(config.api_key)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_config_serialization() {
+        let config = Config {
+            api_key: Some("test_key".to_string()),
+        };
+        let toml = toml::to_string(&config).unwrap();
+        assert!(toml.contains("api_key = \"test_key\""));
+    }
+
+    #[test]
+    fn test_config_deserialization() {
+        let toml_str = "api_key = \"secret_key\"";
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(config.api_key, Some("secret_key".to_string()));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert!(config.api_key.is_none());
+    }
+}

@@ -211,10 +211,7 @@ fn parse_score(field: &'static str, value: &str) -> Result<u8, ParseEvaluationEr
         .take_while(|ch| ch.is_ascii_digit())
         .collect();
     if digits.is_empty() {
-        return Err(ParseEvaluationError::InvalidValue(
-            field,
-            value.to_string(),
-        ));
+        return Err(ParseEvaluationError::InvalidValue(field, value.to_string()));
     }
     let score: u8 = digits
         .parse()
@@ -346,7 +343,11 @@ pub fn parse_evaluation(evaluation: &str) -> Result<EvaluationResult, ParseEvalu
 }
 
 pub fn format_evaluation_display(parsed: &EvaluationResult) -> String {
-    let appropriate = if parsed.appropriate { "はい" } else { "いいえ" };
+    let appropriate = if parsed.appropriate {
+        "はい"
+    } else {
+        "いいえ"
+    };
     let overall = match parsed.overall {
         OverallEvaluation::Pass => "合格",
         OverallEvaluation::Fail => "不合格",
@@ -489,5 +490,87 @@ mod tests {
     fn parse_evaluation_rejects_out_of_range_score() {
         let response = PASS_RESPONSE.replace("重要情報の抽出: 4", "重要情報の抽出: 6");
         assert!(parse_evaluation(&response).is_err());
+    }
+
+    #[test]
+    fn test_parse_score_variations() {
+        assert_eq!(parse_score("f", "5").unwrap(), 5);
+        assert_eq!(parse_score("f", " 3 ").unwrap(), 3);
+        assert_eq!(parse_score("f", "4/5").unwrap(), 4);
+        assert_eq!(parse_score("f", "2 (推薦)").unwrap(), 2);
+
+        assert!(parse_score("f", "0").is_err());
+        assert!(parse_score("f", "6").is_err());
+        assert!(parse_score("f", "abc").is_err());
+        assert!(parse_score("f", "あ").is_err());
+    }
+
+    #[test]
+    fn test_parse_evaluation_bullet_variations() {
+        let bullet_types = vec!["-", "・", "•", "*", "−"];
+        for bullet in bullet_types {
+            let response = format!(
+                "{} 適切な要約か: はい\n{} 重要情報の抽出: 4\n{} 簡潔性: 4\n{} 正確性: 4\n{} 改善点1: なし\n{} 改善点2: なし\n{} 改善点3: なし\n{} 総合評価: 合格",
+                bullet, bullet, bullet, bullet, bullet, bullet, bullet, bullet
+            );
+            assert!(
+                parse_evaluation(&response).is_ok(),
+                "Failed for bullet: {}",
+                bullet
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_evaluation_missing_fields() {
+        let response = r#"- 適切な要約か: はい
+- 簡潔性: 4
+- 正確性: 4
+- 改善点1: なし
+- 改善点2: なし
+- 改善点3: なし
+- 総合評価: 合格
+"#;
+        // Missing "重要情報の抽出"
+        let result = parse_evaluation(response);
+        assert!(result.is_err());
+        if let Err(ParseEvaluationError::MissingField(field)) = result {
+            assert_eq!(field, "重要情報の抽出");
+        } else {
+            panic!("Expected MissingField error");
+        }
+    }
+
+    #[test]
+    fn test_parse_evaluation_duplicate_fields() {
+        let response = PASS_RESPONSE.to_string() + "- 簡潔性: 5\n";
+        let result = parse_evaluation(&response);
+        assert!(result.is_err());
+        if let Err(ParseEvaluationError::DuplicateField(field)) = result {
+            assert_eq!(field, "簡潔性");
+        } else {
+            panic!("Expected DuplicateField error");
+        }
+    }
+
+    #[test]
+    fn test_format_evaluation_display() {
+        let result = EvaluationResult {
+            appropriate: true,
+            importance: 5,
+            conciseness: 3,
+            accuracy: 4,
+            improvement1: "imp1".to_string(),
+            improvement2: "imp2".to_string(),
+            improvement3: "imp3".to_string(),
+            overall: OverallEvaluation::Pass,
+        };
+        let formatted = format_evaluation_display(&result);
+        assert!(formatted.contains("適切な要約か: はい"));
+        assert!(formatted.contains("重要情報の抽出: 5"));
+        assert!(formatted.contains("簡潔性: 3"));
+        assert!(formatted.contains("正確性: 4"));
+        assert!(formatted.contains("改善点1: imp1"));
+        assert!(formatted.contains("総合評価: 合格"));
     }
 }

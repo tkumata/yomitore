@@ -17,3 +17,17 @@ pub enum AppError {
     #[error("API response contained no choices.")]
     NoChoicesInResponse,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display_messages() {
+        assert_eq!(AppError::InvalidApiKey.to_string(), "Invalid API Key.");
+        assert_eq!(
+            AppError::NoChoicesInResponse.to_string(),
+            "API response contained no choices."
+        );
+    }
+}
