@@ -136,35 +136,9 @@ fn clamp_textarea_scroll(state: &mut TextAreaState) {
 }
 
 fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
-    // Get full screen area
     let full_area = frame.area();
+    let overlay_area = calculate_overlay_area(full_area);
     let margin = OVERLAY_MARGIN;
-
-    let max_overlay_width = full_area.width.saturating_sub(margin.saturating_mul(2));
-    let max_overlay_height = full_area.height.saturating_sub(margin.saturating_mul(2));
-
-    // 余白リングを確保した上でオーバーレイを中央に配置する
-    let overlay_width = full_area
-        .width
-        .saturating_mul(OVERLAY_SIZE_PERCENT)
-        .saturating_div(100)
-        .max(MIN_OVERLAY_WIDTH)
-        .min(max_overlay_width);
-    let overlay_height = full_area
-        .height
-        .saturating_mul(OVERLAY_SIZE_PERCENT)
-        .saturating_div(100)
-        .max(MIN_OVERLAY_HEIGHT)
-        .min(max_overlay_height);
-    let x = full_area.x + full_area.width.saturating_sub(overlay_width) / 2;
-    let y = full_area.y + full_area.height.saturating_sub(overlay_height) / 2;
-
-    let overlay_area = Rect {
-        x,
-        y,
-        width: overlay_width,
-        height: overlay_height,
-    };
 
     let outer_area = Rect {
         x: overlay_area.x.saturating_sub(margin),
@@ -359,4 +333,75 @@ fn render_help_view(app: &App, frame: &mut Frame) {
 
     frame.render_widget(paragraph, layout[1]);
     render_status_bar(app, frame, layout[2]);
+}
+
+fn calculate_overlay_area(full_area: Rect) -> Rect {
+    let margin = OVERLAY_MARGIN;
+
+    let max_overlay_width = full_area.width.saturating_sub(margin.saturating_mul(2));
+    let max_overlay_height = full_area.height.saturating_sub(margin.saturating_mul(2));
+
+    // 余白リングを確保した上でオーバーレイを中央に配置する
+    let overlay_width = full_area
+        .width
+        .saturating_mul(OVERLAY_SIZE_PERCENT)
+        .saturating_div(100)
+        .max(MIN_OVERLAY_WIDTH)
+        .min(max_overlay_width);
+    let overlay_height = full_area
+        .height
+        .saturating_mul(OVERLAY_SIZE_PERCENT)
+        .saturating_div(100)
+        .max(MIN_OVERLAY_HEIGHT)
+        .min(max_overlay_height);
+    let x = full_area.x + full_area.width.saturating_sub(overlay_width) / 2;
+    let y = full_area.y + full_area.height.saturating_sub(overlay_height) / 2;
+
+    Rect {
+        x,
+        y,
+        width: overlay_width,
+        height: overlay_height,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_overlay_area_standard() {
+        let full_area = Rect::new(0, 0, 100, 40);
+        let overlay = calculate_overlay_area(full_area);
+
+        // 75% of 100 is 75, 75% of 40 is 30
+        assert_eq!(overlay.width, 75);
+        assert_eq!(overlay.height, 30);
+        assert_eq!(overlay.x, 12); // (100 - 75) / 2 = 12.5 -> 12
+        assert_eq!(overlay.y, 5); // (40 - 30) / 2 = 5
+    }
+
+    #[test]
+    fn test_calculate_overlay_area_min_size_constraint() {
+        // Small screen: 75% would be 30x7.5, which is below MIN_OVERLAY_WIDTH(40) and MIN_OVERLAY_HEIGHT(10)
+        let full_area = Rect::new(0, 0, 40, 10);
+        let overlay = calculate_overlay_area(full_area);
+
+        // Should be capped by max_overlay_width/height (saturating_sub(margin*2))
+        // margin=2 -> max_width = 40-4 = 36, max_height = 10-4 = 6
+        assert_eq!(overlay.width, 36);
+        assert_eq!(overlay.height, 6);
+    }
+
+    #[test]
+    fn test_calculate_overlay_area_margins_preserved() {
+        let full_area = Rect::new(0, 0, 100, 40);
+        let overlay = calculate_overlay_area(full_area);
+
+        // Overlay should never be closer than OVERLAY_MARGIN to any edge
+        assert!(overlay.x >= OVERLAY_MARGIN);
+        assert!(overlay.y >= OVERLAY_MARGIN);
+        assert!(overlay.x + overlay.width <= full_area.width - OVERLAY_MARGIN);
+        assert!(overlay.y + overlay.height <= full_area.height - OVERLAY_MARGIN);
+    }
 }
