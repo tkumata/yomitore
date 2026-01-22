@@ -38,6 +38,22 @@ pub struct TrainingStats {
     pub badges: Vec<Badge>,
     #[serde(default)]
     pub current_streak: usize,
+    #[serde(default, alias = "pet")]
+    pub buddy: Buddy,
+    #[serde(default)]
+    pub last_training_date: Option<DateTime<Local>>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Buddy {
+    pub level: u32,
+    pub exp: u32,
+}
+
+impl Default for Buddy {
+    fn default() -> Self {
+        Self { level: 1, exp: 0 }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -82,6 +98,9 @@ impl TrainingStats {
         // Recalculate current streak from results to handle existing data
         stats.recalculate_streak();
 
+        // Check for buddy penalty (level down if inactive for 3+ days)
+        stats.check_buddy_penalty();
+
         // Rebuild badges from historical data if needed
         stats.rebuild_badges_from_history();
 
@@ -98,6 +117,38 @@ impl TrainingStats {
         Ok(())
     }
 
+    /// Add experience to buddy
+    fn add_buddy_exp(&mut self) {
+        self.buddy.exp += 1;
+
+        let required_exp = if self.buddy.level == 2 { 10 } else { 5 };
+
+        if self.buddy.exp >= required_exp {
+            self.buddy.level += 1;
+            self.buddy.exp = 0;
+        }
+    }
+
+    /// Check if penalty should be applied (level down if inactive for 3 days)
+    fn check_buddy_penalty(&mut self) {
+        if let Some(last_date) = self.last_training_date {
+            let now = Local::now();
+            let days_diff = (now - last_date).num_days();
+
+            if days_diff >= 3 {
+                if self.buddy.level > 1 {
+                    self.buddy.level -= 1;
+                }
+                self.buddy.exp = 0;
+                // Penalized, update last training date to now to avoid repeated penalties
+                // or just to mark that we checked it?
+                // If we don't update key, next checkout will penalize again potentially.
+                // Let's reset the timer.
+                self.last_training_date = Some(now);
+            }
+        }
+    }
+
     pub fn add_result_with_evaluation(
         &mut self,
         passed: bool,
@@ -106,11 +157,15 @@ impl TrainingStats {
         self.results.push(TrainingResult {
             timestamp: Local::now(),
             passed,
-            evaluation,
+            evaluation: evaluation.clone(),
         });
+
+        // Update last training date
+        self.last_training_date = Some(Local::now());
 
         // Update streak and award badges
         if passed {
+            self.add_buddy_exp();
             self.current_streak += 1;
 
             // Award consecutive streak badge
@@ -646,5 +701,60 @@ mod tests {
         };
         assert_eq!(b1.get_display_text(), "5連");
         assert_eq!(b2.get_display_text(), "累積10");
+    }
+
+    #[test]
+    fn test_buddy_growth() {
+        let mut stats = TrainingStats::new();
+        assert_eq!(stats.buddy.level, 1);
+        assert_eq!(stats.buddy.exp, 0);
+
+        // Add 5 correct answers -> Level 2
+        for _ in 0..5 {
+            stats.add_result_with_evaluation(true, None);
+        }
+        assert_eq!(stats.buddy.level, 2);
+        assert_eq!(stats.buddy.exp, 0);
+
+        // Level 2 -> Level 3 requires 10 exp
+        // Add 9 correct -> exp 9
+        for _ in 0..9 {
+            stats.add_result_with_evaluation(true, None);
+        }
+        assert_eq!(stats.buddy.level, 2);
+        assert_eq!(stats.buddy.exp, 9);
+
+        // Add 1 more -> Level 3
+        stats.add_result_with_evaluation(true, None);
+        assert_eq!(stats.buddy.level, 3);
+        assert_eq!(stats.buddy.exp, 0);
+
+        // Level 3 -> Level 4 requires 5 exp (default)
+        for _ in 0..4 {
+            stats.add_result_with_evaluation(true, None);
+        }
+        assert_eq!(stats.buddy.level, 3);
+        assert_eq!(stats.buddy.exp, 4);
+
+        // Add 1 incorrect -> exp unchanged
+        stats.add_result_with_evaluation(false, None);
+        assert_eq!(stats.buddy.exp, 4);
+    }
+
+    #[test]
+    fn test_buddy_penalty() {
+        let mut stats = TrainingStats::new();
+        // Set level to 2 manually for testing
+        stats.buddy.level = 2;
+        stats.buddy.exp = 3;
+        stats.last_training_date = Some(Local::now() - chrono::Duration::days(3));
+
+        // Check penalty
+        stats.check_buddy_penalty();
+
+        assert_eq!(stats.buddy.level, 1);
+        assert_eq!(stats.buddy.exp, 0);
+        // Date should be updated
+        assert!(stats.last_training_date.unwrap() > Local::now() - chrono::Duration::minutes(1));
     }
 }

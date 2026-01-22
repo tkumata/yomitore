@@ -11,6 +11,30 @@ const WEEKS_TO_SHOW: usize = 4;
 /// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
+const BUDDY_LEVEL_1: &str = r#"
+     ヘ_ヘ
+    ミ. . ミ
+     (    )〜"#;
+
+const BUDDY_LEVEL_2: &str = r#"
+     ヘ_ヘ
+    ミ. . ミ
+     (=o= )〜"#;
+
+const BUDDY_LEVEL_3: &str = r#"
+     ヘ_ヘ   ✨
+    ミ. . ミ
+✨   ( 🎀  )〜"#;
+
+fn get_buddy_ascii(level: u32) -> &'static str {
+    let art = match level {
+        1 => BUDDY_LEVEL_1,
+        2 => BUDDY_LEVEL_2,
+        _ => BUDDY_LEVEL_3,
+    };
+    art.strip_prefix('\n').unwrap_or(art)
+}
+
 /// Renders badge section common to both reports
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -32,10 +56,10 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
         lines.push(Line::from(badge_line));
     }
 
-    // Cumulative milestone badges (⭐)
+    // Cumulative milestone badges (✨)
     if !cumulative_badges.is_empty() {
         let mut badge_line = vec![Span::styled(
-            "⭐ 累積正解: ",
+            "✨ 累積正解: ",
             Style::default().fg(Color::Cyan).bold(),
         )];
         for badge in cumulative_badges.iter().take(MAX_BADGES_DISPLAY) {
@@ -104,21 +128,40 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // Badges (4 lines)
+            Constraint::Length(6), // Badges & Buddy (needs 4 lines: 3 for Art + 1 for Exp)
             Constraint::Min(0),    // Reports
         ])
         .split(inner);
 
-    // Render badges block at the top
+    // Split the top area horizontally: Badges (Left), Buddy (Right)
+    let top_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .split(vertical_layout[0]);
+
+    // Render badges block at the top left
     let badge_block = Block::default()
         .title("バッジ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let badge_inner = badge_block.inner(vertical_layout[0]);
-    frame.render_widget(badge_block, vertical_layout[0]);
+    let badge_inner = badge_block.inner(top_layout[0]);
+    frame.render_widget(badge_block, top_layout[0]);
     let badge_content = Text::from(render_badge_section(stats));
     let badge_paragraph = Paragraph::new(badge_content);
     frame.render_widget(badge_paragraph, badge_inner);
+
+    // Render Buddy at the top right
+    let buddy_block = Block::default()
+        .title(format!("バディ (Lv.{})", stats.buddy.level))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::LightBlue));
+    let buddy_inner = buddy_block.inner(top_layout[1]);
+    frame.render_widget(buddy_block, top_layout[1]);
+
+    let buddy_ascii = get_buddy_ascii(stats.buddy.level);
+    let buddy_text = format!("{}\n    Exp: {}/5", buddy_ascii, stats.buddy.exp);
+    let buddy_paragraph = Paragraph::new(buddy_text);
+    frame.render_widget(buddy_paragraph, buddy_inner);
 
     // Split the bottom area horizontally: left for monthly, right for weekly
     let horizontal_layout = Layout::default()
