@@ -25,7 +25,7 @@ const PET_LEVEL_3: &str = r#"
    ヘ_ヘ
   ミ. . ミ
    (    ) 〜
- Hemi Neko"#;
+  Hemi Neko"#;
 
 fn get_pet_ascii(level: u32) -> &'static str {
     let art = match level {
