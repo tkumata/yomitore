@@ -33,93 +33,11 @@ async fn main() -> Result<(), AppError> {
     while !app.should_quit {
         tui.draw(|frame| ui::render(&mut app, frame))?;
 
-        if let Some(result) = events::handle_events(&mut app).await? {
-            match result {
-                AppAction::StartTraining => {
-                    app.view_mode = ViewMode::Normal;
-                    app.status_message = "Generating text...".to_string();
-                    tui.draw(|frame| ui::render(&mut app, frame))?;
-
-                    generate_text_for_training(&mut app).await;
-                }
-                AppAction::Evaluate => {
-                    app.is_evaluating = true;
-                    app.status_message = "Evaluating your summary...".to_string();
-                    tui.draw(|frame| ui::render(&mut app, frame))?;
-
-                    if let Some(client) = &app.api_client {
-                        // Get summary from text_area_state
-                        let summary = app.text_area_state.value().to_string();
-
-                        match client
-                            .evaluate_summary(app.original_text.clone(), summary)
-                            .await
-                        {
-                            Ok(evaluation) => match parse_evaluation(&evaluation) {
-                                Ok(parsed) => {
-                                    app.evaluation_passed =
-                                        matches!(parsed.overall, OverallEvaluation::Pass);
-                                    app.evaluation_text = format_evaluation_display(&parsed);
-                                    app.show_evaluation_overlay = true;
-                                    app.evaluation_overlay_scroll = 0;
-                                    app.is_evaluating = false;
-                                    app.status_message =
-                                        "評価が完了しました。'e'で切替、'n'で次へ。".to_string();
-
-                                    let scores = EvaluationScores {
-                                        appropriate: parsed.appropriate,
-                                        importance: parsed.importance,
-                                        conciseness: parsed.conciseness,
-                                        accuracy: parsed.accuracy,
-                                        improvement1: parsed.improvement1,
-                                        improvement2: parsed.improvement2,
-                                        improvement3: parsed.improvement3,
-                                        overall_passed: app.evaluation_passed,
-                                    };
-
-                                    app.stats.add_result_with_evaluation(
-                                        app.evaluation_passed,
-                                        Some(scores),
-                                    );
-                                    if let Err(e) = app.stats.save() {
-                                        app.status_message =
-                                            format!("警告: 統計の保存に失敗しました: {}", e);
-                                        eprintln!("Failed to save stats: {}", e);
-                                    }
-                                }
-                                Err(_) => {
-                                    app.evaluation_text = "評価結果の形式が不正です".to_string();
-                                    app.evaluation_passed = false;
-                                    app.show_evaluation_overlay = true;
-                                    app.evaluation_overlay_scroll = 0;
-                                    app.is_evaluating = false;
-                                    app.status_message = "評価結果の形式が不正です".to_string();
-                                }
-                            },
-                            Err(e) => {
-                                app.evaluation_text = format!("Error: {}", e);
-                                app.evaluation_passed = false;
-                                app.show_evaluation_overlay = true;
-                                app.evaluation_overlay_scroll = 0;
-                                app.is_evaluating = false;
-                                app.status_message = "Error occurred.".to_string();
-                            }
-                        }
-                    }
-                }
-                AppAction::NextTraining => {
-                    // Reset all evaluation-related state
-                    app.show_evaluation_overlay = false;
-                    app.evaluation_text.clear();
-                    app.evaluation_passed = false;
-                    app.text_area_state = App::new_text_area_state();
-                    app.original_text_scroll = 0;
-                    app.evaluation_overlay_scroll = 0;
-                    app.status_message = "Generating new text...".to_string();
-                    tui.draw(|frame| ui::render(&mut app, frame))?;
-
-                    generate_text_for_training(&mut app).await;
-                }
+        if let Some(action) = events::handle_events(&mut app).await? {
+            match action {
+                AppAction::StartTraining => handle_start_training(&mut app, &mut tui).await?,
+                AppAction::Evaluate => handle_evaluate(&mut app, &mut tui).await?,
+                AppAction::NextTraining => handle_next_training(&mut app, &mut tui).await?,
             }
         }
     }
@@ -142,6 +60,95 @@ async fn generate_text_for_training(app: &mut App) {
             }
         }
     }
+}
+
+async fn handle_start_training(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppError> {
+    app.view_mode = ViewMode::Normal;
+    app.status_message = "Generating text...".to_string();
+    tui.draw(|frame| ui::render(app, frame))?;
+
+    generate_text_for_training(app).await;
+    Ok(())
+}
+
+async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppError> {
+    app.is_evaluating = true;
+    app.status_message = "Evaluating your summary...".to_string();
+    tui.draw(|frame| ui::render(app, frame))?;
+
+    let client = match &app.api_client {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+
+    // Get summary from text_area_state
+    let summary = app.text_area_state.value().to_string();
+
+    match client
+        .evaluate_summary(app.original_text.clone(), summary)
+        .await
+    {
+        Ok(evaluation) => match parse_evaluation(&evaluation) {
+            Ok(parsed) => {
+                app.evaluation_passed = matches!(parsed.overall, OverallEvaluation::Pass);
+                app.evaluation_text = format_evaluation_display(&parsed);
+                app.show_evaluation_overlay = true;
+                app.evaluation_overlay_scroll = 0;
+                app.is_evaluating = false;
+                app.status_message = "評価が完了しました。'e'で切替、'n'で次へ。".to_string();
+
+                let scores = EvaluationScores {
+                    appropriate: parsed.appropriate,
+                    importance: parsed.importance,
+                    conciseness: parsed.conciseness,
+                    accuracy: parsed.accuracy,
+                    improvement1: parsed.improvement1,
+                    improvement2: parsed.improvement2,
+                    improvement3: parsed.improvement3,
+                    overall_passed: app.evaluation_passed,
+                };
+
+                app.stats
+                    .add_result_with_evaluation(app.evaluation_passed, Some(scores));
+                if let Err(e) = app.stats.save() {
+                    app.status_message = format!("警告: 統計の保存に失敗しました: {}", e);
+                    eprintln!("Failed to save stats: {}", e);
+                }
+            }
+            Err(_) => {
+                app.evaluation_text = "評価結果の形式が不正です".to_string();
+                app.evaluation_passed = false;
+                app.show_evaluation_overlay = true;
+                app.evaluation_overlay_scroll = 0;
+                app.is_evaluating = false;
+                app.status_message = "評価結果の形式が不正です".to_string();
+            }
+        },
+        Err(e) => {
+            app.evaluation_text = format!("Error: {}", e);
+            app.evaluation_passed = false;
+            app.show_evaluation_overlay = true;
+            app.evaluation_overlay_scroll = 0;
+            app.is_evaluating = false;
+            app.status_message = "Error occurred.".to_string();
+        }
+    }
+    Ok(())
+}
+
+async fn handle_next_training(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppError> {
+    // Reset all evaluation-related state
+    app.show_evaluation_overlay = false;
+    app.evaluation_text.clear();
+    app.evaluation_passed = false;
+    app.text_area_state = App::new_text_area_state();
+    app.original_text_scroll = 0;
+    app.evaluation_overlay_scroll = 0;
+    app.status_message = "Generating new text...".to_string();
+    tui.draw(|frame| ui::render(app, frame))?;
+
+    generate_text_for_training(app).await;
+    Ok(())
 }
 
 async fn authenticate() -> Result<Box<dyn ApiClientLike>, AppError> {
