@@ -184,7 +184,18 @@
 
 - **合否判定**: 評価結果のテキスト内に「総合評価: 合格」という文字列が含まれているかチェック（`evaluation.contains("総合評価: 合格")`）
 
-### 3.5. UI レンダリング (ui.rs, tui.rs)
+### 3.5. ペット育成機能 (stats.rs, reports.rs)
+
+**実装メソッド**:
+- `Pet::add_exp()`: 経験値加算。5 exp でレベルアップ。
+- `TrainingStats::check_pet_penalty()`: ペナルティ判定。最終トレーニングから3日経過でレベルダウン。
+
+**ロジック**:
+- 合格時: `exp += 1`
+- レベルアップ: `exp >= 5` → `level += 1`, `exp = 0`
+- ペナルティ: `now - last_training_date >= 3 days` → `level -= 1` (if level > 1), `exp = 0`
+
+### 3.6. UI レンダリング (ui.rs, tui.rs)
 
 **ターミナル初期化**:
 
@@ -245,6 +256,20 @@ pub struct TrainingStats {
     pub results: Vec<TrainingResult>,
     pub badges: Vec<Badge>,
     pub current_streak: usize,
+    pub pet: Pet,
+    pub last_training_date: Option<DateTime<Local>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Pet {
+    pub level: u32,
+    pub exp: u32,
+}
+
+impl Default for Pet {
+    fn default() -> Self {
+        Self { level: 1, exp: 0 }
+    }
 }
 
 pub struct TrainingResult {

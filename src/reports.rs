@@ -11,6 +11,14 @@ const WEEKS_TO_SHOW: usize = 4;
 /// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
+fn get_pet_ascii(level: u32) -> &'static str {
+    match level {
+        1 => "   [●]   \n  Core   ",
+        2 => "  [o_o]  \n  /|_|\\  \n   Bot   ",
+        _ => " /[◉_◉]\\ \n  |[_]|  \n //   \\\\ \n  Mech   ",
+    }
+}
+
 /// Renders badge section common to both reports
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
@@ -32,10 +40,10 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
         lines.push(Line::from(badge_line));
     }
 
-    // Cumulative milestone badges (⭐)
+    // Cumulative milestone badges (✨)
     if !cumulative_badges.is_empty() {
         let mut badge_line = vec![Span::styled(
-            "⭐ 累積正解: ",
+            "✨ 累積正解: ",
             Style::default().fg(Color::Cyan).bold(),
         )];
         for badge in cumulative_badges.iter().take(MAX_BADGES_DISPLAY) {
@@ -109,16 +117,35 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         ])
         .split(inner);
 
-    // Render badges block at the top
+    // Split the top area horizontally: Badges (Left), Pet (Right)
+    let top_layout = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .split(vertical_layout[0]);
+
+    // Render badges block at the top left
     let badge_block = Block::default()
         .title("バッジ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let badge_inner = badge_block.inner(vertical_layout[0]);
-    frame.render_widget(badge_block, vertical_layout[0]);
+    let badge_inner = badge_block.inner(top_layout[0]);
+    frame.render_widget(badge_block, top_layout[0]);
     let badge_content = Text::from(render_badge_section(stats));
     let badge_paragraph = Paragraph::new(badge_content);
     frame.render_widget(badge_paragraph, badge_inner);
+
+    // Render Pet at the top right
+    let pet_block = Block::default()
+        .title(format!("ペット (Lv.{})", stats.pet.level))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::LightBlue));
+    let pet_inner = pet_block.inner(top_layout[1]);
+    frame.render_widget(pet_block, top_layout[1]);
+
+    let pet_ascii = get_pet_ascii(stats.pet.level);
+    let pet_text = format!("{}\nExp: {}/5", pet_ascii, stats.pet.exp);
+    let pet_paragraph = Paragraph::new(pet_text).alignment(Alignment::Center);
+    frame.render_widget(pet_paragraph, pet_inner);
 
     // Split the bottom area horizontally: left for monthly, right for weekly
     let horizontal_layout = Layout::default()
