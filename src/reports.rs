@@ -14,11 +14,13 @@ const MAX_BADGES_DISPLAY: usize = 20;
 const PET_LEVEL_1: &str = r#"
      ヘ＿ヘ
     ミ・・ ミ
+      =o==
       Kitty"#;
 
 const PET_LEVEL_2: &str = r#"
      ヘ＿ヘ
     ミ. . ミ
+      =o==
       Cat"#;
 
 const PET_LEVEL_3: &str = r#"
