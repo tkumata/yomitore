@@ -120,7 +120,10 @@ impl TrainingStats {
     /// Add experience to pet
     fn add_pet_exp(&mut self) {
         self.pet.exp += 1;
-        if self.pet.exp >= 5 {
+
+        let required_exp = if self.pet.level == 2 { 10 } else { 5 };
+
+        if self.pet.exp >= required_exp {
             self.pet.level += 1;
             self.pet.exp = 0;
         }
@@ -713,11 +716,24 @@ mod tests {
         assert_eq!(stats.pet.level, 2);
         assert_eq!(stats.pet.exp, 0);
 
-        // Add 4 correct -> exp 4
-        for _ in 0..4 {
+        // Level 2 -> Level 3 requires 10 exp
+        // Add 9 correct -> exp 9
+        for _ in 0..9 {
             stats.add_result_with_evaluation(true, None);
         }
         assert_eq!(stats.pet.level, 2);
+        assert_eq!(stats.pet.exp, 9);
+
+        // Add 1 more -> Level 3
+        stats.add_result_with_evaluation(true, None);
+        assert_eq!(stats.pet.level, 3);
+        assert_eq!(stats.pet.exp, 0);
+
+        // Level 3 -> Level 4 requires 5 exp (default)
+        for _ in 0..4 {
+            stats.add_result_with_evaluation(true, None);
+        }
+        assert_eq!(stats.pet.level, 3);
         assert_eq!(stats.pet.exp, 4);
 
         // Add 1 incorrect -> exp unchanged

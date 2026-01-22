@@ -192,7 +192,7 @@
 
 **ロジック**:
 - 合格時: `exp += 1`
-- レベルアップ: `exp >= 5` → `level += 1`, `exp = 0`
+- レベルアップ: `exp >= 5` (Level 2の場合は `exp >= 10`) → `level += 1`, `exp = 0`
 - ペナルティ: `now - last_training_date >= 3 days` → `level -= 1` (if level > 1), `exp = 0`
 
 ### 3.6. UI レンダリング (ui.rs, tui.rs)
