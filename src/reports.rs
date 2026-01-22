@@ -12,26 +12,28 @@ const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 
 const PET_LEVEL_1: &str = r#"
- [●]
-Core"#;
+ ヘ＿ヘ
+ミ・・ ミ
+  Kitty"#;
 
 const PET_LEVEL_2: &str = r#"
-[o_o]  
-/|_|\  
- Bot"#;
+ ヘ＿ヘ
+ミ. . ミ
+  Cat"#;
 
 const PET_LEVEL_3: &str = r#"
-/[◉_◉]\ 
- |[_]|  
-//   \\ 
-  Mech"#;
+   ヘ_ヘ
+  ミ. . ミ
+   (    ) 〜
+ Hemi Neko"#;
 
 fn get_pet_ascii(level: u32) -> &'static str {
-    match level {
-        1 => PET_LEVEL_1.trim(),
-        2 => PET_LEVEL_2.trim(),
-        _ => PET_LEVEL_3.trim(),
-    }
+    let art = match level {
+        1 => PET_LEVEL_1,
+        2 => PET_LEVEL_2,
+        _ => PET_LEVEL_3,
+    };
+    art.strip_prefix('\n').unwrap_or(art)
 }
 
 /// Renders badge section common to both reports
@@ -127,7 +129,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // Badges (4 lines)
+            Constraint::Length(6), // Badges & Pet (needs 4 lines: 3 for Art + 1 for Exp)
             Constraint::Min(0),    // Reports
         ])
         .split(inner);
@@ -159,7 +161,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 
     let pet_ascii = get_pet_ascii(stats.pet.level);
     let pet_text = format!("{}\nExp: {}/5", pet_ascii, stats.pet.exp);
-    let pet_paragraph = Paragraph::new(pet_text).alignment(Alignment::Center);
+    let pet_paragraph = Paragraph::new(pet_text);
     frame.render_widget(pet_paragraph, pet_inner);
 
     // Split the bottom area horizontally: left for monthly, right for weekly
