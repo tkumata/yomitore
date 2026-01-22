@@ -11,26 +11,26 @@ const WEEKS_TO_SHOW: usize = 4;
 /// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
-const PET_LEVEL_1: &str = r#"
+const BUDDY_LEVEL_1: &str = r#"
      ヘ_ヘ
     ミ. . ミ
      (    )〜"#;
 
-const PET_LEVEL_2: &str = r#"
+const BUDDY_LEVEL_2: &str = r#"
      ヘ_ヘ
     ミ. . ミ
-     (=o== )〜"#;
+     (=o= )〜"#;
 
-const PET_LEVEL_3: &str = r#"
+const BUDDY_LEVEL_3: &str = r#"
      ヘ_ヘ   ✨
     ミ. . ミ
-✨   (    )〜8"#;
+✨   ( 🎀  )〜"#;
 
-fn get_pet_ascii(level: u32) -> &'static str {
+fn get_buddy_ascii(level: u32) -> &'static str {
     let art = match level {
-        1 => PET_LEVEL_1,
-        2 => PET_LEVEL_2,
-        _ => PET_LEVEL_3,
+        1 => BUDDY_LEVEL_1,
+        2 => BUDDY_LEVEL_2,
+        _ => BUDDY_LEVEL_3,
     };
     art.strip_prefix('\n').unwrap_or(art)
 }
@@ -128,12 +128,12 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6), // Badges & Pet (needs 4 lines: 3 for Art + 1 for Exp)
+            Constraint::Length(6), // Badges & Buddy (needs 4 lines: 3 for Art + 1 for Exp)
             Constraint::Min(0),    // Reports
         ])
         .split(inner);
 
-    // Split the top area horizontally: Badges (Left), Pet (Right)
+    // Split the top area horizontally: Badges (Left), Buddy (Right)
     let top_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
@@ -150,18 +150,18 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let badge_paragraph = Paragraph::new(badge_content);
     frame.render_widget(badge_paragraph, badge_inner);
 
-    // Render Pet at the top right
-    let pet_block = Block::default()
-        .title(format!("ペット (Lv.{})", stats.pet.level))
+    // Render Buddy at the top right
+    let buddy_block = Block::default()
+        .title(format!("バディ (Lv.{})", stats.buddy.level))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::LightBlue));
-    let pet_inner = pet_block.inner(top_layout[1]);
-    frame.render_widget(pet_block, top_layout[1]);
+    let buddy_inner = buddy_block.inner(top_layout[1]);
+    frame.render_widget(buddy_block, top_layout[1]);
 
-    let pet_ascii = get_pet_ascii(stats.pet.level);
-    let pet_text = format!("{}\n    Exp: {}/5", pet_ascii, stats.pet.exp);
-    let pet_paragraph = Paragraph::new(pet_text);
-    frame.render_widget(pet_paragraph, pet_inner);
+    let buddy_ascii = get_buddy_ascii(stats.buddy.level);
+    let buddy_text = format!("{}\n    Exp: {}/5", buddy_ascii, stats.buddy.exp);
+    let buddy_paragraph = Paragraph::new(buddy_text);
+    frame.render_widget(buddy_paragraph, buddy_inner);
 
     // Split the bottom area horizontally: left for monthly, right for weekly
     let horizontal_layout = Layout::default()
