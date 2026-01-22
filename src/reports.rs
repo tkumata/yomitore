@@ -11,11 +11,26 @@ const WEEKS_TO_SHOW: usize = 4;
 /// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
+const PET_LEVEL_1: &str = r#"
+ [●]
+Core"#;
+
+const PET_LEVEL_2: &str = r#"
+[o_o]  
+/|_|\  
+ Bot"#;
+
+const PET_LEVEL_3: &str = r#"
+/[◉_◉]\ 
+ |[_]|  
+//   \\ 
+  Mech"#;
+
 fn get_pet_ascii(level: u32) -> &'static str {
     match level {
-        1 => "   [●]   \n  Core   ",
-        2 => "  [o_o]  \n  /|_|\\  \n   Bot   ",
-        _ => " /[◉_◉]\\ \n  |[_]|  \n //   \\\\ \n  Mech   ",
+        1 => PET_LEVEL_1.trim(),
+        2 => PET_LEVEL_2.trim(),
+        _ => PET_LEVEL_3.trim(),
     }
 }
 
