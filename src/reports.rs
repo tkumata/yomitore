@@ -12,20 +12,20 @@ const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 
 const PET_LEVEL_1: &str = r#"
- ヘ＿ヘ
-ミ・・ ミ
-  Kitty"#;
+     ヘ＿ヘ
+    ミ・・ ミ
+      Kitty"#;
 
 const PET_LEVEL_2: &str = r#"
- ヘ＿ヘ
-ミ. . ミ
-  Cat"#;
+     ヘ＿ヘ
+    ミ. . ミ
+      Cat"#;
 
 const PET_LEVEL_3: &str = r#"
-   ヘ_ヘ
-  ミ. . ミ
-   (    ) 〜
-  Hemi Neko"#;
+     ヘ_ヘ
+    ミ. . ミ
+     (    ) 〜
+    Hemi Neko"#;
 
 fn get_pet_ascii(level: u32) -> &'static str {
     let art = match level {
@@ -160,7 +160,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     frame.render_widget(pet_block, top_layout[1]);
 
     let pet_ascii = get_pet_ascii(stats.pet.level);
-    let pet_text = format!("{}\nExp: {}/5", pet_ascii, stats.pet.exp);
+    let pet_text = format!("{}\n    Exp: {}/5", pet_ascii, stats.pet.exp);
     let pet_paragraph = Paragraph::new(pet_text);
     frame.render_widget(pet_paragraph, pet_inner);
 
