@@ -12,19 +12,19 @@ const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 
 const BUDDY_LEVEL_1: &str = r#"
-   ╱|、
- (˚ˎ。7
-  |、˜〵〜"#;
+          ╱|、
+        (˚ˎ。7
+         |、˜〵〜"#;
 
 const BUDDY_LEVEL_2: &str = r#"
-  ヘ_ヘ
- ミ. . ミ
-  |、 〵〜"#;
+         ヘ_ヘ
+        ミ. . ミ
+         |、 〵〜"#;
 
 const BUDDY_LEVEL_3: &str = r#"
-  ヘ_ヘ  ✨
- ミ. . ミ
-  (    )〜"#;
+         ヘ_ヘ
+        ミ. . ミ
+         (    )〜"#;
 
 fn get_buddy_ascii(level: u32) -> &'static str {
     let art = match level {
@@ -161,7 +161,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let buddy_ascii = get_buddy_ascii(stats.buddy.level);
     let required_exp = required_exp_for_level(stats.buddy.level);
     let buddy_text = format!(
-        "{}\n    Exp: {}/{}",
+        "{}\n        Exp: {}/{}",
         buddy_ascii, stats.buddy.exp, required_exp
     );
     let buddy_paragraph = Paragraph::new(buddy_text);
