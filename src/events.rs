@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, ViewMode};
+use crate::app::{App, MENU_OPTIONS, ViewMode, OVERLAY_SIZE_PERCENT};
 use crate::error::AppError;
 use rat_text::event::HandleEvent;
 use ratatui::{
@@ -10,8 +10,11 @@ use std::time::Duration;
 /// Event polling interval in milliseconds
 const EVENT_POLL_INTERVAL_MS: u64 = 100;
 
-/// Overlay size as percentage of screen
-const OVERLAY_SIZE_PERCENT: u16 = 75;
+const OVERLAY_HEIGHT_ADJUST: u16 = 4;
+const OVERLAY_WIDTH_ADJUST: u16 = 2;
+const ORIGINAL_HEIGHT_ADJUST: u16 = 3;
+const ORIGINAL_WIDTH_ADJUST: u16 = 2;
+const SCROLL_BORDER_ADJUST: u16 = 2;
 
 pub enum AppAction {
     Evaluate,
@@ -182,10 +185,10 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
                 // Scroll evaluation overlay with bounds checking
                 // Calculate visible height: overlay percent of screen minus borders and headers
-                let visible_height =
-                    (app.terminal_height * OVERLAY_SIZE_PERCENT / 100).saturating_sub(4);
-                let visible_width =
-                    (app.terminal_width * OVERLAY_SIZE_PERCENT / 100).saturating_sub(2);
+                let visible_height = (app.terminal_height * OVERLAY_SIZE_PERCENT / 100)
+                    .saturating_sub(OVERLAY_HEIGHT_ADJUST);
+                let visible_width = (app.terminal_width * OVERLAY_SIZE_PERCENT / 100)
+                    .saturating_sub(OVERLAY_WIDTH_ADJUST);
                 let max_scroll =
                     calculate_max_scroll(&app.evaluation_text, visible_height, visible_width);
                 app.evaluation_overlay_scroll = app
@@ -195,8 +198,9 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             } else {
                 // Scroll original text with bounds checking
                 // Calculate visible height: half screen minus header and status bar
-                let visible_height = (app.terminal_height / 2).saturating_sub(3);
-                let visible_width = (app.terminal_width / 2).saturating_sub(2);
+                let visible_height =
+                    (app.terminal_height / 2).saturating_sub(ORIGINAL_HEIGHT_ADJUST);
+                let visible_width = (app.terminal_width / 2).saturating_sub(ORIGINAL_WIDTH_ADJUST);
                 let max_scroll =
                     calculate_max_scroll(&app.original_text, visible_height, visible_width);
                 app.original_text_scroll =
@@ -222,5 +226,5 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
     }
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
     let total_lines = paragraph.line_count(visible_width) as u16;
-    total_lines.saturating_sub(visible_height.saturating_sub(2)) // -2 for borders
+    total_lines.saturating_sub(visible_height.saturating_sub(SCROLL_BORDER_ADJUST)) // -2 for borders
 }

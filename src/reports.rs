@@ -1,4 +1,4 @@
-use crate::stats::{DailyStats, TrainingStats, WeeklyStats};
+use crate::stats::{DailyStats, TrainingStats, WeeklyStats, required_exp_for_level};
 use chrono::{Datelike, Local, NaiveDate};
 use ratatui::{
     prelude::*,
@@ -159,7 +159,11 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     frame.render_widget(buddy_block, top_layout[1]);
 
     let buddy_ascii = get_buddy_ascii(stats.buddy.level);
-    let buddy_text = format!("{}\n    Exp: {}/5", buddy_ascii, stats.buddy.exp);
+    let required_exp = required_exp_for_level(stats.buddy.level);
+    let buddy_text = format!(
+        "{}\n    Exp: {}/{}",
+        buddy_ascii, stats.buddy.exp, required_exp
+    );
     let buddy_paragraph = Paragraph::new(buddy_text);
     frame.render_widget(buddy_paragraph, buddy_inner);
 
