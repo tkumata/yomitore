@@ -13,6 +13,8 @@ pub enum ViewMode {
 
 /// Menu options for character count selection
 pub const MENU_OPTIONS: [u16; 4] = [400, 720, 1440, 2880];
+pub const OVERLAY_SIZE_PERCENT: u16 = 75;
+pub const TEXT_WRAP_MARGIN: u16 = 2;
 
 /// Application state
 pub struct App {
@@ -71,7 +73,7 @@ impl Default for App {
 impl App {
     pub fn new_text_area_state() -> TextAreaState {
         let mut state = TextAreaState::default();
-        state.set_text_wrap(TextWrap::Word(2)); // prefer safe word-wrap
+        state.set_text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN)); // prefer safe word-wrap
         state
     }
 

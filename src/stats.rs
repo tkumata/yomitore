@@ -10,6 +10,17 @@ const BADGE_INTERVAL: usize = 5;
 const MAX_CONSECUTIVE_STREAK: usize = 50;
 /// Maximum cumulative correct answers for badges (20 badges)
 const MAX_CUMULATIVE_MILESTONE: usize = 100;
+const BUDDY_EXP_LEVEL2: u32 = 10;
+const BUDDY_EXP_DEFAULT: u32 = 5;
+const BUDDY_PENALTY_DAYS: i64 = 3;
+
+pub fn required_exp_for_level(level: u32) -> u32 {
+    if level == 2 {
+        BUDDY_EXP_LEVEL2
+    } else {
+        BUDDY_EXP_DEFAULT
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrainingResult {
@@ -117,11 +128,41 @@ impl TrainingStats {
         Ok(())
     }
 
+    fn award_badges_for_progress(
+        &mut self,
+        current_streak: usize,
+        total_correct: usize,
+        earned_at: DateTime<Local>,
+    ) {
+        if current_streak.is_multiple_of(BADGE_INTERVAL) && current_streak <= MAX_CONSECUTIVE_STREAK
+        {
+            let badge = Badge {
+                badge_type: BadgeType::ConsecutiveStreak(current_streak),
+                earned_at,
+            };
+            if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
+                self.badges.push(badge);
+            }
+        }
+
+        if total_correct.is_multiple_of(BADGE_INTERVAL)
+            && total_correct <= MAX_CUMULATIVE_MILESTONE
+        {
+            let badge = Badge {
+                badge_type: BadgeType::CumulativeMilestone(total_correct),
+                earned_at,
+            };
+            if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
+                self.badges.push(badge);
+            }
+        }
+    }
+
     /// Add experience to buddy
     fn add_buddy_exp(&mut self) {
         self.buddy.exp += 1;
 
-        let required_exp = if self.buddy.level == 2 { 10 } else { 5 };
+        let required_exp = required_exp_for_level(self.buddy.level);
 
         if self.buddy.exp >= required_exp {
             self.buddy.level += 1;
@@ -135,7 +176,7 @@ impl TrainingStats {
             let now = Local::now();
             let days_diff = (now - last_date).num_days();
 
-            if days_diff >= 3 {
+            if days_diff >= BUDDY_PENALTY_DAYS {
                 if self.buddy.level > 1 {
                     self.buddy.level -= 1;
                 }
@@ -168,36 +209,10 @@ impl TrainingStats {
             self.add_buddy_exp();
             self.current_streak += 1;
 
-            // Award consecutive streak badge
-            if self.current_streak.is_multiple_of(BADGE_INTERVAL)
-                && self.current_streak <= MAX_CONSECUTIVE_STREAK
-            {
-                let badge = Badge {
-                    badge_type: BadgeType::ConsecutiveStreak(self.current_streak),
-                    earned_at: Local::now(),
-                };
-                // Only add if we don't already have this badge
-                if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                    self.badges.push(badge);
-                }
-            }
-
             // Count total correct answers for cumulative milestone
             let total_correct = self.results.iter().filter(|r| r.passed).count();
 
-            // Award cumulative milestone badge
-            if total_correct.is_multiple_of(BADGE_INTERVAL)
-                && total_correct <= MAX_CUMULATIVE_MILESTONE
-            {
-                let badge = Badge {
-                    badge_type: BadgeType::CumulativeMilestone(total_correct),
-                    earned_at: Local::now(),
-                };
-                // Only add if we don't already have this badge
-                if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                    self.badges.push(badge);
-                }
-            }
+            self.award_badges_for_progress(self.current_streak, total_correct, Local::now());
         } else {
             // Reset streak on incorrect answer, but keep earned badges
             self.current_streak = 0;
@@ -225,41 +240,15 @@ impl TrainingStats {
     /// Rebuild badges from historical data
     fn rebuild_badges_from_history(&mut self) {
         // Track all streak milestones and cumulative milestones reached
-        let mut max_streak: usize = 0;
         let mut current_streak: usize = 0;
         let mut total_correct: usize = 0;
 
-        for result in &self.results {
+        let results = self.results.clone();
+        for result in results {
             if result.passed {
                 current_streak += 1;
                 total_correct += 1;
-                max_streak = max_streak.max(current_streak);
-
-                // Award consecutive streak badges
-                if current_streak.is_multiple_of(BADGE_INTERVAL)
-                    && current_streak <= MAX_CONSECUTIVE_STREAK
-                {
-                    let badge = Badge {
-                        badge_type: BadgeType::ConsecutiveStreak(current_streak),
-                        earned_at: result.timestamp,
-                    };
-                    if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                        self.badges.push(badge);
-                    }
-                }
-
-                // Award cumulative milestone badges
-                if total_correct.is_multiple_of(BADGE_INTERVAL)
-                    && total_correct <= MAX_CUMULATIVE_MILESTONE
-                {
-                    let badge = Badge {
-                        badge_type: BadgeType::CumulativeMilestone(total_correct),
-                        earned_at: result.timestamp,
-                    };
-                    if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                        self.badges.push(badge);
-                    }
-                }
+                self.award_badges_for_progress(current_streak, total_correct, result.timestamp);
             } else {
                 current_streak = 0;
             }

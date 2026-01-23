@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, ViewMode};
+use crate::app::{App, MENU_OPTIONS, TEXT_WRAP_MARGIN, ViewMode, OVERLAY_SIZE_PERCENT};
 use crate::help;
 use crate::reports;
 use rat_text::{HasScreenCursor, text_area::TextAreaState};
@@ -7,8 +7,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-/// Overlay size as percentage of screen
-const OVERLAY_SIZE_PERCENT: u16 = 75;
 const OVERLAY_MARGIN: u16 = 2;
 /// Minimum overlay dimensions
 const MIN_OVERLAY_WIDTH: u16 = 40;
@@ -119,7 +117,7 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 
     let textarea = TextArea::new()
         .block(block)
-        .text_wrap(TextWrap::Word(2)) // Safer default margin; prefer near-edge wrap
+        .text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN)) // Safer default margin; prefer near-edge wrap
         .style(Style::default());
 
     // Render with state
