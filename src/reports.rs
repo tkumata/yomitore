@@ -13,8 +13,8 @@ const MAX_BADGES_DISPLAY: usize = 20;
 
 const BUDDY_LEVEL_1: &str = r#"
       ╱|、
-    (˚ˎ 。7
-     |、˜〵〜"#;
+    (˚ˎ。7
+     |、˜〵"#;
 
 const BUDDY_LEVEL_2: &str = r#"
      ヘ_ヘ
