@@ -12,19 +12,19 @@ const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 
 const BUDDY_LEVEL_1: &str = r#"
-     ヘ_ヘ
-    ミ. . ミ
-     (    )〜"#;
+      ╱|、
+    (˚ˎ 。7
+     |、˜〵〜"#;
 
 const BUDDY_LEVEL_2: &str = r#"
      ヘ_ヘ
     ミ. . ミ
-     (=o= )〜"#;
+     |、 〵〜"#;
 
 const BUDDY_LEVEL_3: &str = r#"
-     ヘ_ヘ   ✨
+     ヘ_ヘ  ✨
     ミ. . ミ
-✨   ( 🎀  )〜"#;
+ ✨  (    )〜"#;
 
 fn get_buddy_ascii(level: u32) -> &'static str {
     let art = match level {
