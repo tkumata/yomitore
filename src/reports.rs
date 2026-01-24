@@ -11,26 +11,47 @@ const WEEKS_TO_SHOW: usize = 4;
 /// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
-const BUDDY_LEVEL_1: &str = r#"
+const BUDDY_LEVEL_1_A: &str = r#"
           ╱|、
         (˚ˎ。7
          |、˜〵〜"#;
 
-const BUDDY_LEVEL_2: &str = r#"
+const BUDDY_LEVEL_1_B: &str = r#"
+          ╱|、
+        (>ˎ。7
+         |、˜〵∫"#;
+
+const BUDDY_LEVEL_2_A: &str = r#"
          ヘ_ヘ
         ミ. . ミ
          |、 〵〜"#;
 
-const BUDDY_LEVEL_3: &str = r#"
+const BUDDY_LEVEL_2_B: &str = r#"
+         ヘ_ヘ
+        ミ> . ミ
+         |、 〵〜"#;
+
+const BUDDY_LEVEL_3_A: &str = r#"
          ヘ_ヘ
         ミ. . ミ
          (    )〜"#;
 
+const BUDDY_LEVEL_3_B: &str = r#"
+         ヘ_ヘ    ✨
+        ミ> < ミ
+         (    )∫"#;
+
 fn get_buddy_ascii(level: u32) -> &'static str {
-    let art = match level {
-        1 => BUDDY_LEVEL_1,
-        2 => BUDDY_LEVEL_2,
-        _ => BUDDY_LEVEL_3,
+    // 500ms for each frame
+    let frame = (Local::now().timestamp_millis() / 500) % 2;
+
+    let art = match (level, frame) {
+        (1, 0) => BUDDY_LEVEL_1_A,
+        (1, _) => BUDDY_LEVEL_1_B,
+        (2, 0) => BUDDY_LEVEL_2_A,
+        (2, _) => BUDDY_LEVEL_2_B,
+        (_, 0) => BUDDY_LEVEL_3_A,
+        (_, _) => BUDDY_LEVEL_3_B,
     };
     art.strip_prefix('\n').unwrap_or(art)
 }

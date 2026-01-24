@@ -193,6 +193,7 @@
 
 - `Buddy::add_exp()`: 経験値加算。5 exp でレベルアップ。
 - `TrainingStats::check_buddy_penalty()`: ペナルティ判定。最終トレーニングから3日経過でレベルダウン。
+- `get_buddy_ascii(level: u32) -> &'static str`: 500ms 間隔で切り替わるアニメーションフレームを返す。
 
 **ロジック**:
 
