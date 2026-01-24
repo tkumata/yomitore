@@ -73,7 +73,10 @@
 
 1. **設定ファイルからの読み込み**:
    - `config::load_api_key()` で TOML 形式の設定ファイルを読み込む
-   - パス: `~/.config/yomitore/config.toml`
+   - パス:
+     - Linux: `~/.config/yomitore/config.toml`
+     - macOS: `~/Library/Application Support/yomitore/config.toml`
+     - Windows: `%APPDATA%/yomitore/config.toml`
 2. **環境変数からの読み込み**:
    - `env::var("GROQ_API_KEY")` で環境変数を確認
 3. **認証検証**:
@@ -187,10 +190,12 @@
 ### 3.5. バディ育成機能 (stats.rs, reports.rs)
 
 **実装メソッド**:
+
 - `Buddy::add_exp()`: 経験値加算。5 exp でレベルアップ。
 - `TrainingStats::check_buddy_penalty()`: ペナルティ判定。最終トレーニングから3日経過でレベルダウン。
 
 **ロジック**:
+
 - 合格時: `exp += 1`
 - レベルアップ: `exp >= 5` (Level 2の場合は `exp >= 10`) → `level += 1`, `exp = 0`
 - ペナルティ: `now - last_training_date >= 3 days` → `level -= 1` (if level > 1), `exp = 0`
@@ -308,7 +313,10 @@ pub struct EvaluationScores {
 
 **データ永続化**:
 
-- パス: `~/.config/yomitore/stats.json`
+- パス:
+  - Linux: `~/.config/yomitore/stats.json`
+  - macOS: `~/Library/Application Support/yomitore/stats.json`
+  - Windows: `%APPDATA%/yomitore/stats.json`
 - 形式: JSON（serde_json 使用）
 - 保存: `save() -> Result<(), Box<dyn std::error::Error>>`
 - 読み込み: `load() -> Result<Self, Box<dyn std::error::Error>>`
@@ -573,12 +581,14 @@ chrono = { version = "0.4", features = ["serde"] }
 各モジュールに `#[cfg(test)]` ブロックを設け、純粋関数を中心にテストを実装している。
 
 #### 8.1.1. 統計管理 (`stats.rs`)
+
 - バッジ授与ロジック（連続正解、累積正解）
 - 履歴に基づくストリークの再計算
 - 日次/週次統計の集計ロジック
 - 中央値、平均計算のエッジケース
 
 #### 8.1.2. APIクライアント (`api_client.rs`)
+
 - 評価結果パースロジック
   - 箇条書き記号の揺らぎ（`-`, `・`, `•`, `*`, `−`）の許容
   - スコア抽出（数値、数値を含む文字列、範囲外）
@@ -586,9 +596,11 @@ chrono = { version = "0.4", features = ["serde"] }
 - 評価結果表示用フォーマットの整合性
 
 #### 8.1.3. 設定管理 (`config.rs`)
+
 - `Config` 構造体の TOML シリアライズ/デシリアライズ
 
 #### 8.1.4. エラー定義 (`error.rs`)
+
 - 各エラー型のカスタム表示メッセージの検証
 
 ### 8.2. テスト実行

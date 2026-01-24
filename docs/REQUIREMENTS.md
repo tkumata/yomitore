@@ -89,7 +89,10 @@
 
 ### 2.7. 統計・レポート機能
 
-- トレーニング結果を `~/.config/yomitore/stats.json` に保存する
+- トレーニング結果を以下の場所に保存する
+  - Linux: `~/.config/yomitore/stats.json`
+  - macOS: `~/Library/Application Support/yomitore/stats.json`
+  - Windows: `%APPDATA%/yomitore/stats.json`
 - 統計情報：
   - 日次集計 (過去 30 日)
   - 週次集計 (過去 4 週)
@@ -158,8 +161,14 @@
 
 ### 3.6. データ永続化
 
-- 設定ファイル: `~/.config/yomitore/config.toml` (TOML 形式)
-- 統計ファイル: `~/.config/yomitore/stats.json` (JSON 形式)
+- 設定ファイル:
+  - Linux: `~/.config/yomitore/config.toml`
+  - macOS: `~/Library/Application Support/yomitore/config.toml`
+  - Windows: `%APPDATA%/yomitore/config.toml`
+- 統計ファイル:
+  - Linux: `~/.config/yomitore/stats.json`
+  - macOS: `~/Library/Application Support/yomitore/stats.json`
+  - Windows: `%APPDATA%/yomitore/stats.json`
 - ディレクトリが存在しない場合は自動作成
 - データの整合性を保証 (JSON スキーマ検証)
 - 過去データとの互換性維持
