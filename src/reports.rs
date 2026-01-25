@@ -1,4 +1,5 @@
-use crate::stats::{DailyStats, TrainingStats, WeeklyStats, required_exp_for_level};
+use crate::models::{DailyStats, WeeklyStats};
+use crate::stats::{TrainingStats, required_exp_for_level};
 use chrono::{Datelike, Local, NaiveDate};
 use ratatui::{
     prelude::*,
@@ -18,7 +19,7 @@ const BUDDY_LEVEL_1_A: &str = r#"
 
 const BUDDY_LEVEL_1_B: &str = r#"
           ╱|、
-        (>ˎ。7
+        (˚ˎ< 7
          |、˜〵∫"#;
 
 const BUDDY_LEVEL_2_A: &str = r#"

@@ -4,6 +4,7 @@ mod config;
 mod error;
 mod events;
 mod help;
+mod models;
 mod reports;
 mod stats;
 mod tui;
@@ -16,7 +17,7 @@ use crate::{
     app::{App, ViewMode},
     error::AppError,
     events::AppAction,
-    stats::EvaluationScores,
+    models::EvaluationScores,
 };
 use std::env;
 
