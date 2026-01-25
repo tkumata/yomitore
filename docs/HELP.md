@@ -2,10 +2,9 @@
 
 ## 概要
 
-yomitore は読解力を向上させるためのトレーニングツールです。
-AI が生成した文章を読んで要約を作成し、その要約を AI が評価します。
+yomitore は読解力を向上させるためのトレーニングツールです。AI が生成した文章を読んで要約を作成し、その要約を AI が評価します。
 
-**最新版情報** (v0.1.9)
+## 更新履歴
 
 - API タイムアウト設定追加（60 秒）
 - ターミナルサイズ要求を緩和（最小 100x30）
@@ -61,13 +60,13 @@ AI が生成した文章を読んで要約を作成し、その要約を AI が�
 
 **注意:** アプリケーションを使用するには、事前に API キーの設定が必要です。
 
-以下のいずれかの方法で設定してください：
+以下のいずれかの方法で設定してください:
 
-1. **設定ファイル (推奨)**:
+1. **設定ファイル(推奨)**:
    以下のパスに `config.toml` ファイルを作成し、API キーを記述します。
-   - **Linux:** `~/.config/yomitore/config.toml`
-   - **macOS:** `~/Library/Application\ Support/yomitore/config.toml`
-   - **Windows:** `%APPDATA%\yomitore\config.toml`
+   - **Linux**: `~/.config/yomitore/config.toml`
+   - **macOS**: `~/Library/Application\ Support/yomitore/config.toml`
+   - **Windows**: `%APPDATA%\yomitore\config.toml`
 
    ファイル内容:
 
@@ -110,7 +109,8 @@ API リクエストは 60 秒でタイムアウトします。
 
 統計データは以下の場所に保存されます：
 
-- macOS/Linux: `~/.config/yomitore/stats.json`
+- Linux: `~/.config/yomitore/stats.json`
+- macOS: `~/Library/Application Support/yomitore/stats.json`
 - Windows: `%APPDATA%\yomitore\stats.json`
 
 ### レポート内容
@@ -156,7 +156,3 @@ API リクエストは 60 秒でタイムアウトします。
 
 - ターミナルサイズを最小 100x30 以上に設定してください
 - UTF-8 エンコーディングに対応したターミナルを使用してください
-
-## その他
-
-詳細は README.md をご覧ください。

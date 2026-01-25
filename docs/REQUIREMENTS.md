@@ -31,7 +31,7 @@
 ### 2.1. 認証機能
 
 - アプリケーション起動時に、以下の方法で GroqCloud API キーを取得する：
-  1. 保存された設定ファイル (`~/.config/yomitore/config.toml`)から読み込む
+  1. 保存された設定ファイルから読み込む
   2. 環境変数 `GROQ_API_KEY` から読み込む
 - 入力された API キーの有効性を検証する (`/models` エンドポイント)
 - 認証に成功した API キーは設定ファイルに保存する (Unix 系では 600 パーミッション)
@@ -51,7 +51,7 @@
 ### 2.3. 文章生成機能
 
 - 選択された文字数に基づき、GroqCloud API に文章生成を要求する
-- **プロンプト**: "日本の公的文書および新聞記事に共通する、客観的で簡潔かつ形式的な文体で、感情的表現や口語表現を避けた文章をN文字程度で生成してください。" (推論能力のないLLMの性能向上のため、このプロンプトを2回繰り返して送信する)
+- **プロンプト**: "日本の公的文書および新聞記事に共通する、客観的で簡潔かつ形式的な文体で、感情的表現や口語表現を避けた文章を N 文字程度で生成してください。" (推論能力のない LLM の性能向上のため、このプロンプトを2回繰り返して送信する)
 - API タイムアウト: 60 秒
 - 生成された文章を画面左半分に表示する
 - スクロール機能を提供する (`↑/↓` または `j/k`)
@@ -89,7 +89,10 @@
 
 ### 2.7. 統計・レポート機能
 
-- トレーニング結果を `~/.config/yomitore/stats.json` に保存する
+- トレーニング結果を以下の場所に保存する
+  - Linux: `~/.config/yomitore/stats.json`
+  - macOS: `~/Library/Application Support/yomitore/stats.json`
+  - Windows: `%APPDATA%/yomitore/stats.json`
 - 統計情報：
   - 日次集計 (過去 30 日)
   - 週次集計 (過去 4 週)
@@ -113,7 +116,7 @@
 - レポート画面に「バディ」を表示する
 - **成長ルール**: トレーニングに5回合格するとレベルアップする
 - **ペナルティ**: 最終トレーニングから3日（72時間）以上経過するとレベルが下がる（レベル1未満にはならない）
-- **見た目**: レベルに応じた ASCII アートで表現する
+- **見た目**: レベルに応じた ASCII アートで表現し、500ms 間隔で瞬きや動きのあるアニメーションを行う
 
 ## 3. 非機能要件
 
@@ -158,8 +161,14 @@
 
 ### 3.6. データ永続化
 
-- 設定ファイル: `~/.config/yomitore/config.toml` (TOML 形式)
-- 統計ファイル: `~/.config/yomitore/stats.json` (JSON 形式)
+- 設定ファイル:
+  - Linux: `~/.config/yomitore/config.toml`
+  - macOS: `~/Library/Application Support/yomitore/config.toml`
+  - Windows: `%APPDATA%/yomitore/config.toml`
+- 統計ファイル:
+  - Linux: `~/.config/yomitore/stats.json`
+  - macOS: `~/Library/Application Support/yomitore/stats.json`
+  - Windows: `%APPDATA%/yomitore/stats.json`
 - ディレクトリが存在しない場合は自動作成
 - データの整合性を保証 (JSON スキーマ検証)
 - 過去データとの互換性維持
