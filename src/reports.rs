@@ -30,7 +30,7 @@ const BUDDY_LEVEL_2_A: &str = r#"
 const BUDDY_LEVEL_2_B: &str = r#"
          ヘ_ヘ
         ミ> . ミ
-         |、 〵〜"#;
+         |、 〵∫"#;
 
 const BUDDY_LEVEL_3_A: &str = r#"
          ヘ_ヘ
