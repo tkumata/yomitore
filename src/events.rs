@@ -9,8 +9,6 @@ use std::time::Duration;
 
 const EVENT_POLL_INTERVAL_MS: u64 = 100;
 
-const SCROLL_BORDER_ADJUST: u16 = 2;
-
 pub enum AppAction {
     Evaluate,
     NextTraining,
@@ -186,10 +184,33 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
 }
 
 fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> u16 {
-    if visible_width == 0 {
+    if visible_width == 0 || visible_height == 0 {
         return 0;
     }
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
     let total_lines = paragraph.line_count(visible_width) as u16;
-    total_lines.saturating_sub(visible_height.saturating_sub(SCROLL_BORDER_ADJUST))
+    total_lines.saturating_sub(visible_height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::calculate_max_scroll;
+
+    #[test]
+    fn calculate_max_scroll_uses_inner_height_without_extra_border_adjustment() {
+        let text = "1\n2\n3\n4\n5";
+        assert_eq!(calculate_max_scroll(text, 3, 10), 2);
+    }
+
+    #[test]
+    fn calculate_max_scroll_returns_zero_when_content_fits() {
+        let text = "1\n2\n3";
+        assert_eq!(calculate_max_scroll(text, 3, 10), 0);
+    }
+
+    #[test]
+    fn calculate_max_scroll_returns_zero_for_zero_sized_viewport() {
+        assert_eq!(calculate_max_scroll("1\n2\n3", 0, 10), 0);
+        assert_eq!(calculate_max_scroll("1\n2\n3", 3, 0), 0);
+    }
 }
