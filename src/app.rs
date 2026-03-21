@@ -1,6 +1,6 @@
 use crate::api_client::ApiClientLike;
 use crate::stats::TrainingStats;
-use rand::Rng;
+use rand::RngExt;
 use rat_text::text_area::{TextAreaState, TextWrap};
 use ratatui::layout::Rect;
 
