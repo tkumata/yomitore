@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, ViewMode, OVERLAY_SIZE_PERCENT};
+use crate::app::{App, MENU_OPTIONS, ViewMode};
 use crate::error::AppError;
 use rat_text::event::HandleEvent;
 use ratatui::{
@@ -7,13 +7,8 @@ use ratatui::{
 };
 use std::time::Duration;
 
-/// Event polling interval in milliseconds
 const EVENT_POLL_INTERVAL_MS: u64 = 100;
 
-const OVERLAY_HEIGHT_ADJUST: u16 = 4;
-const OVERLAY_WIDTH_ADJUST: u16 = 2;
-const ORIGINAL_HEIGHT_ADJUST: u16 = 3;
-const ORIGINAL_WIDTH_ADJUST: u16 = 2;
 const SCROLL_BORDER_ADJUST: u16 = 2;
 
 pub enum AppAction {
@@ -72,14 +67,10 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
             return Some(AppAction::StartTraining);
         }
         KeyCode::Char('r') => {
-            // Show report from menu
-            app.view_mode = ViewMode::Report;
-            app.status_message = "Report. Press 'r' to close.".to_string();
+            app.enter_report_view();
         }
         KeyCode::Char('h') => {
-            // Show help from menu
-            app.view_mode = ViewMode::Help;
-            app.status_message = "Help. Press 'h' to close.".to_string();
+            app.enter_help_view();
         }
         KeyCode::Char('q') => {
             app.should_quit = true;
@@ -90,22 +81,15 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
 }
 
 fn handle_editing_events(app: &mut App, ev: Event, key: event::KeyEvent) -> Option<AppAction> {
-    // Check for Ctrl+S to submit (Shift+Enter doesn't work in most terminals)
     if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        // Ctrl+S: Submit for evaluation
         let content = app.text_area_state.value().to_string();
         if !content.trim().is_empty() {
-            app.is_editing = false;
-            app.text_area_state.focus.set(false); // Disable focus
+            app.stop_editing();
             return Some(AppAction::Evaluate);
         }
     } else if key.code == KeyCode::Esc {
-        app.is_editing = false;
-        app.text_area_state.focus.set(false); // Disable focus
-        app.status_message = "Normal Mode. Press 'i' to edit.".to_string();
+        app.stop_editing();
     } else {
-        // Pass all other input to rat-text TextArea
-        // Use HandleEvent trait
         let _ = app.text_area_state.handle(&ev, rat_text::event::Regular);
     }
     None
@@ -146,14 +130,10 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
     match key.code {
         KeyCode::Char('i') | KeyCode::Enter => {
             if !app.show_evaluation_overlay {
-                app.is_editing = true;
-                app.text_area_state.focus.set(true); // Enable focus for input!
-                app.text_area_state.scroll_cursor_to_visible(); // Keep cursor viewport sane
-                app.status_message = "Editing Mode. Press 'Esc' to exit.".to_string();
+                app.begin_editing();
             }
         }
         KeyCode::Char('e') => {
-            // Toggle evaluation overlay (only if evaluation exists)
             if !app.evaluation_text.is_empty() {
                 app.show_evaluation_overlay = !app.show_evaluation_overlay;
                 if app.show_evaluation_overlay {
@@ -162,33 +142,23 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             }
         }
         KeyCode::Char('n') => {
-            // Next training: close evaluation overlay and proceed
             if app.show_evaluation_overlay {
                 app.show_evaluation_overlay = false;
                 return Some(AppAction::NextTraining);
             }
         }
         KeyCode::Char('r') => {
-            // Toggle report
-            app.view_mode = ViewMode::Report;
-            app.status_message = "Report. Press 'r' to close.".to_string();
+            app.enter_report_view();
         }
         KeyCode::Char('h') => {
-            // Toggle help
-            app.view_mode = ViewMode::Help;
-            app.status_message = "Help. Press 'h' to close.".to_string();
+            app.enter_help_view();
         }
         KeyCode::Char('q') => {
             app.should_quit = true;
         }
         KeyCode::Down | KeyCode::Char('j') => {
             if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
-                // Scroll evaluation overlay with bounds checking
-                // Calculate visible height: overlay percent of screen minus borders and headers
-                let visible_height = (app.terminal_height * OVERLAY_SIZE_PERCENT / 100)
-                    .saturating_sub(OVERLAY_HEIGHT_ADJUST);
-                let visible_width = (app.terminal_width * OVERLAY_SIZE_PERCENT / 100)
-                    .saturating_sub(OVERLAY_WIDTH_ADJUST);
+                let (visible_height, visible_width) = app.evaluation_viewport_size();
                 let max_scroll =
                     calculate_max_scroll(&app.evaluation_text, visible_height, visible_width);
                 app.evaluation_overlay_scroll = app
@@ -196,11 +166,7 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
                     .saturating_add(1)
                     .min(max_scroll);
             } else {
-                // Scroll original text with bounds checking
-                // Calculate visible height: half screen minus header and status bar
-                let visible_height =
-                    (app.terminal_height / 2).saturating_sub(ORIGINAL_HEIGHT_ADJUST);
-                let visible_width = (app.terminal_width / 2).saturating_sub(ORIGINAL_WIDTH_ADJUST);
+                let (visible_height, visible_width) = app.original_text_viewport_size();
                 let max_scroll =
                     calculate_max_scroll(&app.original_text, visible_height, visible_width);
                 app.original_text_scroll =
@@ -219,12 +185,11 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
     None
 }
 
-/// Calculate the maximum scroll offset for given text content
 fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> u16 {
     if visible_width == 0 {
         return 0;
     }
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
     let total_lines = paragraph.line_count(visible_width) as u16;
-    total_lines.saturating_sub(visible_height.saturating_sub(SCROLL_BORDER_ADJUST)) // -2 for borders
+    total_lines.saturating_sub(visible_height.saturating_sub(SCROLL_BORDER_ADJUST))
 }

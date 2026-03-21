@@ -1,19 +1,19 @@
 use crate::models::*;
+use crate::stats_analysis;
 use chrono::{DateTime, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-/// Badge award interval (every N correct answers)
 const BADGE_INTERVAL: usize = 5;
-/// Maximum consecutive streak for badges (10 badges)
 const MAX_CONSECUTIVE_STREAK: usize = 50;
-/// Maximum cumulative correct answers for badges (20 badges)
 const MAX_CUMULATIVE_MILESTONE: usize = 100;
 const BUDDY_EXP_LEVEL2: u32 = 10;
 const BUDDY_EXP_DEFAULT: u32 = 5;
 const BUDDY_PENALTY_DAYS: i64 = 3;
+const APP_DIR_NAME: &str = "yomitore";
+const STATS_FILE_NAME: &str = "stats.json";
 
 pub fn required_exp_for_level(level: u32) -> u32 {
     if level == 2 {
@@ -49,13 +49,8 @@ impl TrainingStats {
         let content = fs::read_to_string(&path)?;
         let mut stats: TrainingStats = serde_json::from_str(&content)?;
 
-        // Recalculate current streak from results to handle existing data
         stats.recalculate_streak();
-
-        // Check for buddy penalty (level down if inactive for 3+ days)
         stats.check_buddy_penalty();
-
-        // Rebuild badges from historical data if needed
         stats.rebuild_badges_from_history();
 
         Ok(stats)
@@ -100,7 +95,6 @@ impl TrainingStats {
         }
     }
 
-    /// Add experience to buddy
     fn add_buddy_exp(&mut self) {
         self.buddy.exp += 1;
 
@@ -112,7 +106,6 @@ impl TrainingStats {
         }
     }
 
-    /// Check if penalty should be applied (level down if inactive for 3 days)
     fn check_buddy_penalty(&mut self) {
         if let Some(last_date) = self.last_training_date {
             let now = Local::now();
@@ -123,10 +116,6 @@ impl TrainingStats {
                     self.buddy.level -= 1;
                 }
                 self.buddy.exp = 0;
-                // Penalized, update last training date to now to avoid repeated penalties
-                // or just to mark that we checked it?
-                // If we don't update key, next checkout will penalize again potentially.
-                // Let's reset the timer.
                 self.last_training_date = Some(now);
             }
         }
@@ -137,51 +126,39 @@ impl TrainingStats {
         passed: bool,
         evaluation: Option<EvaluationScores>,
     ) {
+        let now = Local::now();
         self.results.push(TrainingResult {
-            timestamp: Local::now(),
+            timestamp: now,
             passed,
-            evaluation: evaluation.clone(),
+            evaluation,
         });
+        self.last_training_date = Some(now);
 
-        // Update last training date
-        self.last_training_date = Some(Local::now());
-
-        // Update streak and award badges
         if passed {
             self.add_buddy_exp();
             self.current_streak += 1;
-
-            // Count total correct answers for cumulative milestone
             let total_correct = self.results.iter().filter(|r| r.passed).count();
-
-            self.award_badges_for_progress(self.current_streak, total_correct, Local::now());
+            self.award_badges_for_progress(self.current_streak, total_correct, now);
         } else {
-            // Reset streak on incorrect answer, but keep earned badges
             self.current_streak = 0;
         }
     }
 
     fn get_stats_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let config_dir = dirs::config_dir().ok_or("Could not find config directory")?;
-        Ok(config_dir.join("yomitore").join("stats.json"))
+        let config_dir = dirs::config_dir().ok_or("設定ディレクトリが見つかりません。")?;
+        Ok(config_dir.join(APP_DIR_NAME).join(STATS_FILE_NAME))
     }
 
-    /// Recalculate current streak from the end of results
     fn recalculate_streak(&mut self) {
-        self.current_streak = 0;
-        // Count consecutive correct answers from the end
-        for result in self.results.iter().rev() {
-            if result.passed {
-                self.current_streak += 1;
-            } else {
-                break;
-            }
-        }
+        self.current_streak = self
+            .results
+            .iter()
+            .rev()
+            .take_while(|result| result.passed)
+            .count();
     }
 
-    /// Rebuild badges from historical data
     fn rebuild_badges_from_history(&mut self) {
-        // Track all streak milestones and cumulative milestones reached
         let mut current_streak: usize = 0;
         let mut total_correct: usize = 0;
 
@@ -197,77 +174,14 @@ impl TrainingStats {
         }
     }
 
-    /// Get daily aggregated stats for the last N days
     pub fn get_daily_stats(&self, days: usize) -> HashMap<NaiveDate, DailyStats> {
-        self.calculate_daily_stats(days, Local::now().date_naive())
+        stats_analysis::calculate_daily_stats(&self.results, days, Local::now().date_naive())
     }
 
-    /// Internal logic for daily stats aggregation
-    fn calculate_daily_stats(
-        &self,
-        days: usize,
-        today: NaiveDate,
-    ) -> HashMap<NaiveDate, DailyStats> {
-        let mut daily_map: HashMap<NaiveDate, DailyStats> = HashMap::new();
-
-        // Initialize all dates with empty stats
-        for i in 0..days {
-            let date = today - chrono::Duration::days(i as i64);
-            daily_map.insert(date, DailyStats::default());
-        }
-
-        // Aggregate results
-        for result in &self.results {
-            let date = result.timestamp.date_naive();
-            if let Some(stats) = daily_map.get_mut(&date) {
-                if result.passed {
-                    stats.correct += 1;
-                } else {
-                    stats.incorrect += 1;
-                }
-            }
-        }
-
-        daily_map
-    }
-
-    /// Get weekly stats for the last N weeks
     pub fn get_weekly_stats(&self, weeks: usize) -> Vec<WeeklyStats> {
-        self.calculate_weekly_stats(weeks, Local::now())
+        stats_analysis::calculate_weekly_stats(&self.results, weeks, Local::now())
     }
 
-    /// Internal logic for weekly stats aggregation
-    fn calculate_weekly_stats(&self, weeks: usize, now: DateTime<Local>) -> Vec<WeeklyStats> {
-        let mut weekly_stats = Vec::new();
-
-        for week in 0..weeks {
-            let week_start = now - chrono::Duration::weeks((weeks - week - 1) as i64);
-            let week_end = week_start + chrono::Duration::weeks(1);
-
-            let mut correct = 0;
-            let mut incorrect = 0;
-
-            for result in &self.results {
-                if result.timestamp >= week_start && result.timestamp < week_end {
-                    if result.passed {
-                        correct += 1;
-                    } else {
-                        incorrect += 1;
-                    }
-                }
-            }
-
-            weekly_stats.push(WeeklyStats {
-                week_number: week + 1,
-                correct,
-                incorrect,
-            });
-        }
-
-        weekly_stats
-    }
-
-    /// Get badges grouped by type for display
     pub fn get_badges_by_type(&self) -> (Vec<&Badge>, Vec<&Badge>) {
         let consecutive: Vec<&Badge> = self
             .badges
@@ -285,83 +199,33 @@ impl TrainingStats {
     }
 
     pub fn get_recent_evaluation_summary(&self, days: usize) -> EvaluationSummary {
-        let today = Local::now().date_naive();
-        let start_date = today - chrono::Duration::days((days.saturating_sub(1)) as i64);
-
-        let mut importance_scores = Vec::new();
-        let mut conciseness_scores = Vec::new();
-        let mut accuracy_scores = Vec::new();
-
-        for result in &self.results {
-            if result.timestamp.date_naive() < start_date {
-                continue;
-            }
-            if let Some(evaluation) = &result.evaluation {
-                importance_scores.push(evaluation.importance);
-                conciseness_scores.push(evaluation.conciseness);
-                accuracy_scores.push(evaluation.accuracy);
-            }
-        }
-
-        let count = importance_scores.len();
-
-        EvaluationSummary {
-            count,
-            importance: calculate_score_stats(&importance_scores),
-            conciseness: calculate_score_stats(&conciseness_scores),
-            accuracy: calculate_score_stats(&accuracy_scores),
-        }
-    }
-}
-
-fn calculate_score_stats(scores: &[u8]) -> Option<EvaluationScoreStats> {
-    if scores.is_empty() {
-        return None;
-    }
-
-    let sum: u32 = scores.iter().map(|&value| value as u32).sum();
-    let average = sum as f32 / scores.len() as f32;
-    let median = calculate_median(scores);
-
-    Some(EvaluationScoreStats { average, median })
-}
-
-fn calculate_median(scores: &[u8]) -> f32 {
-    let mut sorted: Vec<u8> = scores.to_vec();
-    sorted.sort_unstable();
-
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        sorted[mid] as f32
-    } else {
-        (sorted[mid - 1] as f32 + sorted[mid] as f32) / 2.0
+        stats_analysis::get_recent_evaluation_summary(&self.results, days)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::stats_analysis::{
+        calculate_daily_stats, calculate_median, calculate_score_stats, calculate_weekly_stats,
+    };
 
     #[test]
     fn test_badge_awarding_consecutive() {
         let mut stats = TrainingStats::new();
 
-        // Add 5 consecutive correct answers
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
         }
 
-        // Should have 1 consecutive streak badge (5連) and 1 cumulative badge (累積5)
         let (consecutive, cumulative) = stats.get_badges_by_type();
         assert_eq!(consecutive.len(), 1);
         assert_eq!(cumulative.len(), 1);
 
-        // Add 5 more consecutive correct answers
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
         }
 
-        // Should have 2 consecutive streak badges (5連, 10連) and 2 cumulative badges (累積5, 累積10)
         let (consecutive, cumulative) = stats.get_badges_by_type();
         assert_eq!(consecutive.len(), 2);
         assert_eq!(cumulative.len(), 2);
@@ -371,45 +235,36 @@ mod tests {
     fn test_streak_reset_on_incorrect() {
         let mut stats = TrainingStats::new();
 
-        // Add 5 consecutive correct answers
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
         }
 
-        // Current streak should be 5
         assert_eq!(stats.current_streak, 5);
 
-        // Add incorrect answer
         stats.add_result_with_evaluation(false, None);
 
-        // Streak should reset to 0
         assert_eq!(stats.current_streak, 0);
 
-        // But badges should still be there
         let (consecutive, _) = stats.get_badges_by_type();
-        assert_eq!(consecutive.len(), 1); // Still have the 5連 badge
+        assert_eq!(consecutive.len(), 1);
     }
 
     #[test]
     fn test_rebuild_badges_from_history() {
         let mut stats = TrainingStats::new();
 
-        // Simulate existing data
         for _ in 0..10 {
             stats.add_result_with_evaluation(true, None);
         }
 
-        // Clear badges to simulate old data without badges
         stats.badges.clear();
         stats.current_streak = 0;
 
-        // Rebuild from history
         stats.rebuild_badges_from_history();
 
-        // Should have 2 consecutive streak badges and 2 cumulative badges
         let (consecutive, cumulative) = stats.get_badges_by_type();
-        assert_eq!(consecutive.len(), 2); // 5連, 10連
-        assert_eq!(cumulative.len(), 2); // 累積5, 累積10
+        assert_eq!(consecutive.len(), 2);
+        assert_eq!(cumulative.len(), 2);
     }
 
     #[test]
@@ -417,7 +272,6 @@ mod tests {
         let mut stats = TrainingStats::new();
         let today = Local::now().date_naive();
 
-        // Add today's results
         stats.results.push(TrainingResult {
             timestamp: Local::now(),
             passed: true,
@@ -429,7 +283,6 @@ mod tests {
             evaluation: None,
         });
 
-        // Add yesterday's results
         let yesterday = Local::now() - chrono::Duration::days(1);
         stats.results.push(TrainingResult {
             timestamp: yesterday,
@@ -437,15 +290,12 @@ mod tests {
             evaluation: None,
         });
 
-        // Testing the internal method directly
-        let daily_stats = stats.calculate_daily_stats(7, today);
+        let daily_stats = calculate_daily_stats(&stats.results, 7, today);
 
-        // Verify today
         let today_stats = daily_stats.get(&today).unwrap();
         assert_eq!(today_stats.correct, 1);
         assert_eq!(today_stats.incorrect, 1);
 
-        // Verify yesterday
         let yesterday_date = yesterday.date_naive();
         let yesterday_stats = daily_stats.get(&yesterday_date).unwrap();
         assert_eq!(yesterday_stats.correct, 1);
@@ -457,14 +307,12 @@ mod tests {
         let mut stats = TrainingStats::new();
         let now = Local::now();
 
-        // This week (Week 1 in reverse, so index 0)
         stats.results.push(TrainingResult {
             timestamp: now,
             passed: true,
             evaluation: None,
         });
 
-        // Last week
         let last_week = now - chrono::Duration::days(7);
         stats.results.push(TrainingResult {
             timestamp: last_week,
@@ -477,15 +325,12 @@ mod tests {
             evaluation: None,
         });
 
-        // Testing the internal method directly
-        let weekly_stats = stats.calculate_weekly_stats(4, now);
+        let weekly_stats = calculate_weekly_stats(&stats.results, 4, now);
 
-        // Verify this week (last element)
         let this_week_stats = weekly_stats.last().unwrap();
         assert_eq!(this_week_stats.correct, 1);
         assert_eq!(this_week_stats.incorrect, 0);
 
-        // Verify last week (second to last)
         let last_week_stats = &weekly_stats[weekly_stats.len() - 2];
         assert_eq!(last_week_stats.correct, 0);
         assert_eq!(last_week_stats.incorrect, 2);
@@ -552,11 +397,9 @@ mod tests {
     fn test_recalculate_streak_variations() {
         let mut stats = TrainingStats::new();
 
-        // Empty
         stats.recalculate_streak();
         assert_eq!(stats.current_streak, 0);
 
-        // All passed
         for _ in 0..3 {
             stats.results.push(TrainingResult {
                 timestamp: Local::now(),
@@ -567,7 +410,6 @@ mod tests {
         stats.recalculate_streak();
         assert_eq!(stats.current_streak, 3);
 
-        // Mixed
         stats.results.push(TrainingResult {
             timestamp: Local::now(),
             passed: false,
@@ -603,34 +445,28 @@ mod tests {
         assert_eq!(stats.buddy.level, 1);
         assert_eq!(stats.buddy.exp, 0);
 
-        // Add 5 correct answers -> Level 2
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
         }
         assert_eq!(stats.buddy.level, 2);
         assert_eq!(stats.buddy.exp, 0);
 
-        // Level 2 -> Level 3 requires 10 exp
-        // Add 9 correct -> exp 9
         for _ in 0..9 {
             stats.add_result_with_evaluation(true, None);
         }
         assert_eq!(stats.buddy.level, 2);
         assert_eq!(stats.buddy.exp, 9);
 
-        // Add 1 more -> Level 3
         stats.add_result_with_evaluation(true, None);
         assert_eq!(stats.buddy.level, 3);
         assert_eq!(stats.buddy.exp, 0);
 
-        // Level 3 -> Level 4 requires 5 exp (default)
         for _ in 0..4 {
             stats.add_result_with_evaluation(true, None);
         }
         assert_eq!(stats.buddy.level, 3);
         assert_eq!(stats.buddy.exp, 4);
 
-        // Add 1 incorrect -> exp unchanged
         stats.add_result_with_evaluation(false, None);
         assert_eq!(stats.buddy.exp, 4);
     }
@@ -638,17 +474,14 @@ mod tests {
     #[test]
     fn test_buddy_penalty() {
         let mut stats = TrainingStats::new();
-        // Set level to 2 manually for testing
         stats.buddy.level = 2;
         stats.buddy.exp = 3;
         stats.last_training_date = Some(Local::now() - chrono::Duration::days(3));
 
-        // Check penalty
         stats.check_buddy_penalty();
 
         assert_eq!(stats.buddy.level, 1);
         assert_eq!(stats.buddy.exp, 0);
-        // Date should be updated
         assert!(stats.last_training_date.unwrap() > Local::now() - chrono::Duration::minutes(1));
     }
 }

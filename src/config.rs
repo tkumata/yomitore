@@ -12,7 +12,7 @@ struct Config {
 fn get_config_path() -> Result<PathBuf, AppError> {
     let config_dir = dirs::config_dir().ok_or(AppError::IoError(std::io::Error::new(
         std::io::ErrorKind::NotFound,
-        "Config directory not found",
+        "設定ディレクトリが見つかりません。",
     )))?;
     let app_config_dir = config_dir.join("yomitore");
     fs::create_dir_all(&app_config_dir)?;
@@ -24,8 +24,9 @@ pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
     let config = Config {
         api_key: Some(api_key.to_string()),
     };
-    let toml_string = toml::to_string(&config)
-        .map_err(|_| AppError::IoError(std::io::Error::other("Failed to serialize config")))?;
+    let toml_string = toml::to_string(&config).map_err(|_| {
+        AppError::IoError(std::io::Error::other("設定のシリアライズに失敗しました。"))
+    })?;
 
     let mut file = OpenOptions::new()
         .write(true)
@@ -33,7 +34,6 @@ pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
         .truncate(true)
         .open(&config_path)?;
 
-    // Set file permissions to 600 on Unix-like systems
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -47,7 +47,6 @@ pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
 }
 
 pub fn load_api_key() -> Result<Option<String>, AppError> {
-    // 1. 環境変数 GROQ_API_KEY を最優先に従う
     if let Ok(key) = std::env::var("GROQ_API_KEY") {
         let key = key.trim();
         if !key.is_empty() {
@@ -55,7 +54,6 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
         }
     }
 
-    // 2. 設定ファイルから読み込む
     let config_path = match get_config_path() {
         Ok(path) => path,
         Err(_) => return Ok(None),
@@ -70,7 +68,7 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
     file.read_to_string(&mut contents)?;
 
     let config: Config = toml::from_str(&contents)
-        .map_err(|_| AppError::IoError(std::io::Error::other("Failed to parse config")))?;
+        .map_err(|_| AppError::IoError(std::io::Error::other("設定の解析に失敗しました。")))?;
 
     Ok(config.api_key)
 }
