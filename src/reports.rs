@@ -9,7 +9,6 @@ use std::collections::HashMap;
 
 const DAYS_IN_MONTH: usize = 30;
 const WEEKS_TO_SHOW: usize = 4;
-/// Maximum number of badges to display in report
 const MAX_BADGES_DISPLAY: usize = 20;
 
 const BUDDY_LEVEL_1_A: &str = r#"
@@ -43,7 +42,6 @@ const BUDDY_LEVEL_3_B: &str = r#"
          (    )∫"#;
 
 fn get_buddy_ascii(level: u32) -> &'static str {
-    // 500ms for each frame
     let frame = (Local::now().timestamp_millis() / 500) % 2;
 
     let art = match (level, frame) {
@@ -57,12 +55,10 @@ fn get_buddy_ascii(level: u32) -> &'static str {
     art.strip_prefix('\n').unwrap_or(art)
 }
 
-/// Renders badge section common to both reports
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let (consecutive_badges, cumulative_badges) = stats.get_badges_by_type();
 
-    // Consecutive streak badges (🔥)
     if !consecutive_badges.is_empty() {
         let mut badge_line = vec![Span::styled(
             "🔥 連続正解: ",
@@ -78,7 +74,6 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
         lines.push(Line::from(badge_line));
     }
 
-    // Cumulative milestone badges (✨)
     if !cumulative_badges.is_empty() {
         let mut badge_line = vec![Span::styled(
             "✨ 累積正解: ",
@@ -146,22 +141,16 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Split vertically: badges on top, reports below
     let vertical_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(6), // Badges & Buddy (needs 4 lines: 3 for Art + 1 for Exp)
-            Constraint::Min(0),    // Reports
-        ])
+        .constraints([Constraint::Length(6), Constraint::Min(0)])
         .split(inner);
 
-    // Split the top area horizontally: Badges (Left), Buddy (Right)
     let top_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
         .split(vertical_layout[0]);
 
-    // Render badges block at the top left
     let badge_block = Block::default()
         .title("バッジ")
         .borders(Borders::ALL)
@@ -172,9 +161,8 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let badge_paragraph = Paragraph::new(badge_content);
     frame.render_widget(badge_paragraph, badge_inner);
 
-    // Render Buddy at the top right
     let buddy_block = Block::default()
-        .title(format!("バディ (Lv.{})", stats.buddy.level))
+        .title(format!("バディ (レベル {})", stats.buddy.level))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::LightBlue));
     let buddy_inner = buddy_block.inner(top_layout[1]);
@@ -183,19 +171,17 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let buddy_ascii = get_buddy_ascii(stats.buddy.level);
     let required_exp = required_exp_for_level(stats.buddy.level);
     let buddy_text = format!(
-        "{}\n        Exp: {}/{}",
+        "{}\n        経験値: {}/{}",
         buddy_ascii, stats.buddy.exp, required_exp
     );
     let buddy_paragraph = Paragraph::new(buddy_text);
     frame.render_widget(buddy_paragraph, buddy_inner);
 
-    // Split the bottom area horizontally: left for monthly, right for weekly
     let horizontal_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(vertical_layout[1]);
 
-    // Render monthly report on the left
     let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
     let monthly_block = Block::default()
         .title("月次 (過去30日)")
@@ -229,7 +215,6 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         frame.render_widget(paragraph, monthly_inner);
     }
 
-    // Render weekly report on the right
     let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW);
     let weekly_block = Block::default()
         .title("週次 (過去4週)")
@@ -254,11 +239,9 @@ fn create_heatmap_without_badges(
     let mut lines = Vec::new();
     let today = Local::now().date_naive();
 
-    // Calculate grid dimensions (7 columns for days of week, multiple rows for weeks)
     let cols = 7;
-    let rows = DAYS_IN_MONTH.div_ceil(7); // Round up to include partial weeks
+    let rows = DAYS_IN_MONTH.div_ceil(7);
 
-    // Create week day labels
     let weekdays = vec!["日", "月", "火", "水", "木", "金", "土"];
     let mut header = vec![Span::raw("    ")];
     for day in &weekdays {
@@ -266,33 +249,26 @@ fn create_heatmap_without_badges(
     }
     lines.push(Line::from(header));
 
-    // Build a grid structure: rows x 7 columns
-    // Start from 30 days ago and go forward to today
     let start_date = today - chrono::Duration::days((DAYS_IN_MONTH - 1) as i64);
 
-    // Find the Sunday on or before start_date to align the grid properly
     let start_weekday = start_date.weekday().num_days_from_sunday();
     let grid_start = start_date - chrono::Duration::days(start_weekday as i64);
 
-    // Calculate number of days in grid
     let days_until_today = (today - grid_start).num_days() + 1;
     let grid_rows = (days_until_today as usize).div_ceil(7).min(rows);
 
-    // Generate heatmap grid
     for row in 0..grid_rows {
         let mut line_spans = Vec::new();
 
-        // Week label
         let row_start_date = grid_start + chrono::Duration::days((row * 7) as i64);
         line_spans.push(Span::raw(format!(
-            "W{:02} ",
+            "週{:02} ",
             row_start_date.iso_week().week()
         )));
 
         for col in 0..cols {
             let date = row_start_date + chrono::Duration::days(col as i64);
 
-            // Check if date is in our range (from start_date to today)
             if date < start_date || date > today {
                 line_spans.push(Span::raw("    "));
                 continue;
@@ -302,7 +278,6 @@ fn create_heatmap_without_badges(
                 let total = stats.total();
                 let correct = stats.correct;
 
-                // Determine color intensity based on correct answers
                 let (symbol, style) = get_heatmap_cell_style(total, correct);
 
                 line_spans.push(Span::styled(format!(" {} ", symbol), style));
@@ -314,7 +289,6 @@ fn create_heatmap_without_badges(
         lines.push(Line::from(line_spans));
     }
 
-    // Legend
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("凡例: "),
@@ -342,25 +316,20 @@ fn create_bar_chart_without_badges(
 ) -> Text<'static> {
     let mut lines = Vec::new();
 
-    // Find max value for scaling
     let max_value = weekly_stats
         .iter()
         .map(|s| s.correct.max(s.incorrect))
         .max()
         .unwrap_or(1);
 
-    // Calculate max bar width based on available width
-    // Reserve space for label "第XX週: " (~7 chars) and number suffix (~4 chars)
     let max_bar_width = width.saturating_sub(15).max(10);
 
-    // Display each week
     for stats in weekly_stats {
         let correct_bars = calculate_bar_height(stats.correct, max_value, max_bar_width);
         let incorrect_bars = calculate_bar_height(stats.incorrect, max_value, max_bar_width);
 
         let mut line_spans = vec![Span::raw(format!("第{}週: ", stats.week_number))];
 
-        // Correct bar (green)
         line_spans.push(Span::styled(
             "█".repeat(correct_bars),
             Style::default().fg(Color::Green),
@@ -369,7 +338,6 @@ fn create_bar_chart_without_badges(
 
         lines.push(Line::from(line_spans));
 
-        // Incorrect bar (red)
         let mut incorrect_line = vec![Span::raw("       ")];
         incorrect_line.push(Span::styled(
             "█".repeat(incorrect_bars),
@@ -381,7 +349,6 @@ fn create_bar_chart_without_badges(
         lines.push(Line::from(""));
     }
 
-    // Legend
     lines.push(Line::from(vec![
         Span::raw("凡例: "),
         Span::styled("█", Style::default().fg(Color::Green)),

@@ -2,19 +2,19 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("API request failed: {0}")]
+    #[error("API リクエストに失敗しました: {0}")]
     ApiError(#[from] reqwest::Error),
 
-    #[error("Failed to parse API response: {0}")]
+    #[error("API レスポンスの解析に失敗しました: {0}")]
     ResponseParseError(#[from] serde_json::Error),
 
-    #[error("Invalid API Key.")]
+    #[error("API キーが無効です。")]
     InvalidApiKey,
 
-    #[error("I/O error: {0}")]
+    #[error("I/O エラー: {0}")]
     IoError(#[from] std::io::Error),
 
-    #[error("API response contained no choices.")]
+    #[error("API レスポンスに choices が含まれていません。")]
     NoChoicesInResponse,
 }
 
@@ -24,10 +24,10 @@ mod tests {
 
     #[test]
     fn test_error_display_messages() {
-        assert_eq!(AppError::InvalidApiKey.to_string(), "Invalid API Key.");
+        assert_eq!(AppError::InvalidApiKey.to_string(), "API キーが無効です。");
         assert_eq!(
             AppError::NoChoicesInResponse.to_string(),
-            "API response contained no choices."
+            "API レスポンスに choices が含まれていません。"
         );
     }
 }

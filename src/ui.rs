@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, TEXT_WRAP_MARGIN, ViewMode, OVERLAY_SIZE_PERCENT};
+use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, TEXT_WRAP_MARGIN, ViewMode};
 use crate::help;
 use crate::reports;
 use rat_text::{HasScreenCursor, text_area::TextAreaState};
@@ -7,18 +7,9 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-const OVERLAY_MARGIN: u16 = 2;
-/// Minimum overlay dimensions
-const MIN_OVERLAY_WIDTH: u16 = 40;
-const MIN_OVERLAY_HEIGHT: u16 = 10;
-
-/// Renders the user interface widgets.
 pub fn render(app: &mut App, frame: &mut Frame) {
-    // Update terminal dimensions
-    app.terminal_width = frame.area().width;
-    app.terminal_height = frame.area().height;
+    app.update_terminal_size(frame.area().width, frame.area().height);
 
-    // Check if we should show a report instead of the normal view
     match app.view_mode {
         ViewMode::Menu => {
             render_menu_view(app, frame);
@@ -32,44 +23,34 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             render_help_view(app, frame);
             return;
         }
-        ViewMode::Normal => {
-            // Continue with normal rendering
-        }
+        ViewMode::Normal => {}
     }
 
-    // Main layout: Header, Content, Status
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Header
-            Constraint::Min(0),    // Content (3 blocks)
-            Constraint::Length(3), // Status
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(frame.area());
 
     render_header(frame, main_layout[0]);
 
-    // Content layout: Fixed 50-50 split
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(50), // Left: Original text
-            Constraint::Percentage(50), // Right: Answer input
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(main_layout[1]);
 
-    // Render blocks
     render_original_text(app, frame, content_layout[0]);
     render_summary_input(app, frame, content_layout[1]);
 
-    // Render evaluation overlay on top if visible
     if app.show_evaluation_overlay {
         render_evaluation_overlay(app, frame);
     }
 
     render_status_bar(app, frame, main_layout[2]);
 
-    // Set cursor position if editing
     if app.is_editing
         && let Some((cx, cy)) = app.text_area_state.screen_cursor()
     {
@@ -112,19 +93,16 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    // Create TextArea widget with word-wrap enabled
     use rat_text::text_area::{TextArea, TextWrap};
 
     let textarea = TextArea::new()
         .block(block)
-        .text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN)) // Safer default margin; prefer near-edge wrap
+        .text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN))
         .style(Style::default());
 
-    // Render with state
     frame.render_stateful_widget(textarea, area, &mut app.text_area_state);
 }
 
-/// rat-textはオフセットが行数を超えると描画を丸ごとスキップするため、防御的に補正する
 fn clamp_textarea_scroll(state: &mut TextAreaState) {
     let max_v = state.len_lines().saturating_sub(1) as usize;
     if state.vscroll.offset > max_v {
@@ -134,42 +112,51 @@ fn clamp_textarea_scroll(state: &mut TextAreaState) {
 }
 
 fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
-    let full_area = frame.area();
-    let overlay_area = calculate_overlay_area(full_area);
-    let margin = OVERLAY_MARGIN;
+    let overlay_area = app.calculate_overlay_area();
 
     let outer_area = Rect {
-        x: overlay_area.x.saturating_sub(margin),
-        y: overlay_area.y.saturating_sub(margin),
-        width: overlay_area.width.saturating_add(margin.saturating_mul(2)),
-        height: overlay_area.height.saturating_add(margin.saturating_mul(2)),
+        x: overlay_area.x.saturating_sub(OVERLAY_MARGIN),
+        y: overlay_area.y.saturating_sub(OVERLAY_MARGIN),
+        width: overlay_area
+            .width
+            .saturating_add(OVERLAY_MARGIN.saturating_mul(2)),
+        height: overlay_area
+            .height
+            .saturating_add(OVERLAY_MARGIN.saturating_mul(2)),
     };
 
-    // 余白リングだけを消して、外側の本文は残す
-    if margin > 0 {
+    if OVERLAY_MARGIN > 0 {
         let top = Rect {
             x: outer_area.x,
             y: outer_area.y,
             width: outer_area.width,
-            height: margin,
+            height: OVERLAY_MARGIN,
         };
         let bottom = Rect {
             x: outer_area.x,
-            y: outer_area.y + outer_area.height.saturating_sub(margin),
+            y: outer_area
+                .y
+                .saturating_add(outer_area.height.saturating_sub(OVERLAY_MARGIN)),
             width: outer_area.width,
-            height: margin,
+            height: OVERLAY_MARGIN,
         };
         let left = Rect {
             x: outer_area.x,
-            y: outer_area.y.saturating_add(margin),
-            width: margin,
-            height: outer_area.height.saturating_sub(margin.saturating_mul(2)),
+            y: outer_area.y.saturating_add(OVERLAY_MARGIN),
+            width: OVERLAY_MARGIN,
+            height: outer_area
+                .height
+                .saturating_sub(OVERLAY_MARGIN.saturating_mul(2)),
         };
         let right = Rect {
-            x: outer_area.x + outer_area.width.saturating_sub(margin),
-            y: outer_area.y.saturating_add(margin),
-            width: margin,
-            height: outer_area.height.saturating_sub(margin.saturating_mul(2)),
+            x: outer_area
+                .x
+                .saturating_add(outer_area.width.saturating_sub(OVERLAY_MARGIN)),
+            y: outer_area.y.saturating_add(OVERLAY_MARGIN),
+            width: OVERLAY_MARGIN,
+            height: outer_area
+                .height
+                .saturating_sub(OVERLAY_MARGIN.saturating_mul(2)),
         };
 
         frame.render_widget(Clear, top);
@@ -178,34 +165,27 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
         frame.render_widget(Clear, right);
     }
 
-    // Clear the overlay area explicitly to reset all cells
     frame.render_widget(Clear, overlay_area);
 
-    // Fill overlay area with solid black background using a Paragraph
     let black_background = Paragraph::new("").style(Style::default().bg(Color::Black));
     frame.render_widget(black_background, overlay_area);
 
-    // Determine border color based on pass/fail
     let border_color = if app.evaluation_passed {
         Color::Green
     } else {
         Color::Red
     };
 
-    // Render the block with borders
     let block = Block::default()
         .title(" 評価結果 (e: 閉じる, Shift+↑/↓ or Shift+j/k: スクロール, n: 次の問題) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(Color::Black));
 
-    // Calculate inner area (inside the borders)
     let inner_area = block.inner(overlay_area);
 
-    // Render the block (borders)
     frame.render_widget(block, overlay_area);
 
-    // Render the text
     let paragraph = Paragraph::new(app.evaluation_text.as_str())
         .wrap(Wrap { trim: false })
         .scroll((app.evaluation_overlay_scroll, 0))
@@ -230,9 +210,9 @@ fn render_report_view(app: &App, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Header
-            Constraint::Min(0),    // Report
-            Constraint::Length(3), // Status
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(frame.area());
 
@@ -245,15 +225,14 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Header
-            Constraint::Min(0),    // Menu
-            Constraint::Length(3), // Status
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(frame.area());
 
     render_header(frame, layout[0]);
 
-    // Center the menu box
     let menu_area = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -302,9 +281,9 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // Header
-            Constraint::Min(0),    // Help content
-            Constraint::Length(3), // Status
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(frame.area());
 
@@ -333,33 +312,18 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     render_status_bar(app, frame, layout[2]);
 }
 
+#[cfg(test)]
 fn calculate_overlay_area(full_area: Rect) -> Rect {
-    let margin = OVERLAY_MARGIN;
+    let overlay = App::calculate_overlay_area_for_size(full_area.width, full_area.height);
 
-    let max_overlay_width = full_area.width.saturating_sub(margin.saturating_mul(2));
-    let max_overlay_height = full_area.height.saturating_sub(margin.saturating_mul(2));
-
-    // 余白リングを確保した上でオーバーレイを中央に配置する
-    let overlay_width = full_area
-        .width
-        .saturating_mul(OVERLAY_SIZE_PERCENT)
-        .saturating_div(100)
-        .max(MIN_OVERLAY_WIDTH)
-        .min(max_overlay_width);
-    let overlay_height = full_area
-        .height
-        .saturating_mul(OVERLAY_SIZE_PERCENT)
-        .saturating_div(100)
-        .max(MIN_OVERLAY_HEIGHT)
-        .min(max_overlay_height);
-    let x = full_area.x + full_area.width.saturating_sub(overlay_width) / 2;
-    let y = full_area.y + full_area.height.saturating_sub(overlay_height) / 2;
+    let x = full_area.x.saturating_add(overlay.x);
+    let y = full_area.y.saturating_add(overlay.y);
 
     Rect {
         x,
         y,
-        width: overlay_width,
-        height: overlay_height,
+        width: overlay.width,
+        height: overlay.height,
     }
 }
 
@@ -372,21 +336,17 @@ mod tests {
         let full_area = Rect::new(0, 0, 100, 40);
         let overlay = calculate_overlay_area(full_area);
 
-        // 75% of 100 is 75, 75% of 40 is 30
         assert_eq!(overlay.width, 75);
         assert_eq!(overlay.height, 30);
-        assert_eq!(overlay.x, 12); // (100 - 75) / 2 = 12.5 -> 12
-        assert_eq!(overlay.y, 5); // (40 - 30) / 2 = 5
+        assert_eq!(overlay.x, 12);
+        assert_eq!(overlay.y, 5);
     }
 
     #[test]
     fn test_calculate_overlay_area_min_size_constraint() {
-        // Small screen: 75% would be 30x7.5, which is below MIN_OVERLAY_WIDTH(40) and MIN_OVERLAY_HEIGHT(10)
         let full_area = Rect::new(0, 0, 40, 10);
         let overlay = calculate_overlay_area(full_area);
 
-        // Should be capped by max_overlay_width/height (saturating_sub(margin*2))
-        // margin=2 -> max_width = 40-4 = 36, max_height = 10-4 = 6
         assert_eq!(overlay.width, 36);
         assert_eq!(overlay.height, 6);
     }
@@ -396,7 +356,6 @@ mod tests {
         let full_area = Rect::new(0, 0, 100, 40);
         let overlay = calculate_overlay_area(full_area);
 
-        // Overlay should never be closer than OVERLAY_MARGIN to any edge
         assert!(overlay.x >= OVERLAY_MARGIN);
         assert!(overlay.y >= OVERLAY_MARGIN);
         assert!(overlay.x + overlay.width <= full_area.width - OVERLAY_MARGIN);
