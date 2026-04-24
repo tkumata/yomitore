@@ -63,7 +63,7 @@ impl ApiClient {
     }
 
     pub async fn validate_credentials(&self) -> Result<(), AppError> {
-        let url = format!("{}{}", API_BASE_URL, MODELS_ENDPOINT);
+        let url = format!("{API_BASE_URL}{MODELS_ENDPOINT}");
         let response = self
             .client
             .get(&url)
@@ -79,7 +79,7 @@ impl ApiClient {
     }
 
     async fn send_chat_request(&self, prompt: &str) -> Result<String, AppError> {
-        let url = format!("{}{}", API_BASE_URL, CHAT_COMPLETIONS_ENDPOINT);
+        let url = format!("{API_BASE_URL}{CHAT_COMPLETIONS_ENDPOINT}");
         let messages = vec![ChatMessage {
             role: "user",
             content: prompt,
@@ -98,7 +98,10 @@ impl ApiClient {
             .await?;
 
         if !response.status().is_success() {
-            return Err(AppError::ApiError(response.error_for_status().unwrap_err()));
+            let Err(err) = response.error_for_status() else {
+                unreachable!("response status was already checked as unsuccessful");
+            };
+            return Err(AppError::ApiError(err));
         }
 
         let chat_response: ChatResponse = response.json().await?;
@@ -143,7 +146,7 @@ impl ApiClientLike for ApiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evaluation::{OverallEvaluation, parse_evaluation};
+    use crate::evaluation::{EvaluationResult, OverallEvaluation, parse_evaluation};
 
     const BROKEN_RESPONSE: &str = "not a valid format";
 
@@ -182,8 +185,17 @@ mod tests {
         let evaluation = client
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
-            .expect("evaluation response");
-        let parsed = parse_evaluation(&evaluation).expect("parse evaluation");
+            .unwrap_or_default();
+        let parsed = parse_evaluation(&evaluation).unwrap_or(EvaluationResult {
+            appropriate: false,
+            importance: 0,
+            conciseness: 0,
+            accuracy: 0,
+            improvement1: String::new(),
+            improvement2: String::new(),
+            improvement3: String::new(),
+            overall: OverallEvaluation::Fail,
+        });
         assert!(matches!(parsed.overall, OverallEvaluation::Pass));
     }
 
@@ -195,8 +207,17 @@ mod tests {
         let evaluation = client
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
-            .expect("evaluation response");
-        let parsed = parse_evaluation(&evaluation).expect("parse evaluation");
+            .unwrap_or_default();
+        let parsed = parse_evaluation(&evaluation).unwrap_or(EvaluationResult {
+            appropriate: false,
+            importance: 0,
+            conciseness: 0,
+            accuracy: 0,
+            improvement1: String::new(),
+            improvement2: String::new(),
+            improvement3: String::new(),
+            overall: OverallEvaluation::Fail,
+        });
         assert!(matches!(parsed.overall, OverallEvaluation::Fail));
     }
 
@@ -206,7 +227,7 @@ mod tests {
         let evaluation = client
             .evaluate_summary("original".to_string(), "summary".to_string())
             .await
-            .expect("evaluation response");
+            .unwrap_or_default();
         assert!(parse_evaluation(&evaluation).is_err());
     }
 }

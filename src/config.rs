@@ -54,9 +54,8 @@ pub fn load_api_key() -> Result<Option<String>, AppError> {
         }
     }
 
-    let config_path = match get_config_path() {
-        Ok(path) => path,
-        Err(_) => return Ok(None),
+    let Ok(config_path) = get_config_path() else {
+        return Ok(None);
     };
 
     if !config_path.exists() {
@@ -82,14 +81,14 @@ mod tests {
         let config = Config {
             api_key: Some("test_key".to_string()),
         };
-        let toml = toml::to_string(&config).unwrap();
+        let toml = toml::to_string(&config).unwrap_or_default();
         assert!(toml.contains("api_key = \"test_key\""));
     }
 
     #[test]
     fn test_config_deserialization() {
         let toml_str = "api_key = \"secret_key\"";
-        let config: Config = toml::from_str(toml_str).unwrap();
+        let config: Config = toml::from_str(toml_str).unwrap_or_default();
         assert_eq!(config.api_key, Some("secret_key".to_string()));
     }
 
@@ -109,7 +108,7 @@ mod tests {
         unsafe {
             env::set_var(env_var_name, "env_key");
         }
-        let result = load_api_key().unwrap();
+        let result = load_api_key().unwrap_or_default();
         assert_eq!(result, Some("env_key".to_string()));
 
         // Restore env var
@@ -126,29 +125,44 @@ mod tests {
     #[cfg(unix)]
     fn test_save_api_key_permissions() {
         use std::os::unix::fs::PermissionsExt;
-        let temp_dir = tempfile::tempdir().unwrap();
-        let config_path = temp_dir.path().join("config.toml");
+        let config_path = std::env::temp_dir().join(format!(
+            "yomitore-test-config-{}-{}.toml",
+            std::process::id(),
+            chrono::Local::now()
+                .timestamp_nanos_opt()
+                .unwrap_or_default()
+        ));
 
         // We can't easily mock get_config_path, but we can test the serialization and permission logic
         let api_key = "test_perm_key";
         let config = Config {
             api_key: Some(api_key.to_string()),
         };
-        let toml_string = toml::to_string(&config).unwrap();
+        let toml_string = toml::to_string(&config).unwrap_or_default();
 
-        let mut file = OpenOptions::new()
+        let open_result = OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&config_path)
-            .unwrap();
-
-        let mut perms = file.metadata().unwrap().permissions();
+            .open(&config_path);
+        assert!(open_result.is_ok());
+        let Ok(mut file) = open_result else { return };
+        let metadata_result = file.metadata();
+        assert!(metadata_result.is_ok());
+        let mut perms = match metadata_result {
+            Ok(metadata) => metadata.permissions(),
+            Err(_) => return,
+        };
         perms.set_mode(0o600);
-        file.set_permissions(perms).unwrap();
-        file.write_all(toml_string.as_bytes()).unwrap();
+        assert!(file.set_permissions(perms).is_ok());
+        assert!(file.write_all(toml_string.as_bytes()).is_ok());
 
-        let metadata = fs::metadata(&config_path).unwrap();
+        let metadata_result = fs::metadata(&config_path);
+        assert!(metadata_result.is_ok());
+        let Ok(metadata) = metadata_result else {
+            return;
+        };
         assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
+        let _ = fs::remove_file(&config_path);
     }
 }

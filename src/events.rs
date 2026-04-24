@@ -15,7 +15,7 @@ pub enum AppAction {
     StartTraining,
 }
 
-pub async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
+pub fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
     if event::poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))? {
         let ev = event::read()?;
         if let Event::Key(key) = ev {
@@ -34,11 +34,10 @@ pub async fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError>
                     return Ok(None);
                 }
                 ViewMode::Normal => {
-                    if app.is_editing {
-                        return Ok(handle_editing_events(app, ev, key));
-                    } else {
-                        return Ok(handle_normal_mode_events(app, key));
+                    if app.flags.interaction.is_editing {
+                        return Ok(handle_editing_events(app, &ev, key));
                     }
+                    return Ok(handle_normal_mode_events(app, key));
                 }
             }
         }
@@ -51,17 +50,23 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
         KeyCode::Up | KeyCode::Char('k') => {
             if app.selected_menu_item > 0 {
                 app.selected_menu_item -= 1;
-                app.character_count = MENU_OPTIONS[app.selected_menu_item];
+                if let Some(&count) = MENU_OPTIONS.get(app.selected_menu_item) {
+                    app.character_count = count;
+                }
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
             if app.selected_menu_item < MENU_OPTIONS.len() - 1 {
                 app.selected_menu_item += 1;
-                app.character_count = MENU_OPTIONS[app.selected_menu_item];
+                if let Some(&count) = MENU_OPTIONS.get(app.selected_menu_item) {
+                    app.character_count = count;
+                }
             }
         }
         KeyCode::Enter => {
-            app.character_count = MENU_OPTIONS[app.selected_menu_item];
+            if let Some(&count) = MENU_OPTIONS.get(app.selected_menu_item) {
+                app.character_count = count;
+            }
             return Some(AppAction::StartTraining);
         }
         KeyCode::Char('r') => {
@@ -71,24 +76,23 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
             app.enter_help_view();
         }
         KeyCode::Char('q') => {
-            app.should_quit = true;
+            app.flags.interaction.should_quit = true;
         }
         _ => {}
     }
     None
 }
 
-fn handle_editing_events(app: &mut App, ev: Event, key: event::KeyEvent) -> Option<AppAction> {
+fn handle_editing_events(app: &mut App, ev: &Event, key: event::KeyEvent) -> Option<AppAction> {
     if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        let content = app.text_area_state.value().to_string();
-        if !content.trim().is_empty() {
+        if !app.text_area_state.value().trim().is_empty() {
             app.stop_editing();
             return Some(AppAction::Evaluate);
         }
     } else if key.code == KeyCode::Esc {
         app.stop_editing();
     } else {
-        let _ = app.text_area_state.handle(&ev, rat_text::event::Regular);
+        let _ = app.text_area_state.handle(ev, rat_text::event::Regular);
     }
     None
 }
@@ -99,7 +103,7 @@ fn handle_report_events(app: &mut App, key: event::KeyEvent) {
             app.return_from_aux_view();
         }
         KeyCode::Char('q') => {
-            app.should_quit = true;
+            app.flags.interaction.should_quit = true;
         }
         _ => {}
     }
@@ -118,7 +122,7 @@ fn handle_help_events(app: &mut App, key: event::KeyEvent) {
             app.help_scroll = app.help_scroll.saturating_sub(1);
         }
         KeyCode::Char('q') => {
-            app.should_quit = true;
+            app.flags.interaction.should_quit = true;
         }
         _ => {}
     }
@@ -127,21 +131,22 @@ fn handle_help_events(app: &mut App, key: event::KeyEvent) {
 fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
     match key.code {
         KeyCode::Char('i') | KeyCode::Enter => {
-            if !app.show_evaluation_overlay {
+            if !app.flags.evaluation.show_evaluation_overlay {
                 app.begin_editing();
             }
         }
         KeyCode::Char('e') => {
             if !app.evaluation_text.is_empty() {
-                app.show_evaluation_overlay = !app.show_evaluation_overlay;
-                if app.show_evaluation_overlay {
+                app.flags.evaluation.show_evaluation_overlay =
+                    !app.flags.evaluation.show_evaluation_overlay;
+                if app.flags.evaluation.show_evaluation_overlay {
                     app.evaluation_overlay_scroll = 0;
                 }
             }
         }
         KeyCode::Char('n') => {
-            if app.show_evaluation_overlay {
-                app.show_evaluation_overlay = false;
+            if app.flags.evaluation.show_evaluation_overlay {
+                app.flags.evaluation.show_evaluation_overlay = false;
                 return Some(AppAction::NextTraining);
             }
         }
@@ -152,10 +157,12 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             app.enter_help_view();
         }
         KeyCode::Char('q') => {
-            app.should_quit = true;
+            app.flags.interaction.should_quit = true;
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
+            if app.flags.evaluation.show_evaluation_overlay
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+            {
                 let (visible_height, visible_width) = app.evaluation_viewport_size();
                 let max_scroll =
                     calculate_max_scroll(&app.evaluation_text, visible_height, visible_width);
@@ -172,7 +179,9 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
+            if app.flags.evaluation.show_evaluation_overlay
+                && key.modifiers.contains(KeyModifiers::SHIFT)
+            {
                 app.evaluation_overlay_scroll = app.evaluation_overlay_scroll.saturating_sub(1);
             } else {
                 app.original_text_scroll = app.original_text_scroll.saturating_sub(1);
@@ -188,7 +197,7 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
         return 0;
     }
     let paragraph = Paragraph::new(text).wrap(Wrap { trim: false });
-    let total_lines = paragraph.line_count(visible_width) as u16;
+    let total_lines = u16::try_from(paragraph.line_count(visible_width)).unwrap_or(u16::MAX);
     total_lines.saturating_sub(visible_height)
 }
 

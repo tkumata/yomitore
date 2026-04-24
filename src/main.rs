@@ -31,10 +31,10 @@ async fn main() -> Result<(), AppError> {
 
     let mut tui = tui::init()?;
 
-    while !app.should_quit {
+    while !app.flags.interaction.should_quit {
         tui.draw(|frame| ui::render(&mut app, frame))?;
 
-        if let Some(action) = events::handle_events(&mut app).await? {
+        if let Some(action) = events::handle_events(&mut app)? {
             match action {
                 AppAction::StartTraining => handle_start_training(&mut app, &mut tui).await?,
                 AppAction::Evaluate => handle_evaluate(&mut app, &mut tui).await?,
@@ -68,12 +68,11 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
     app.begin_evaluation();
     tui.draw(|frame| ui::render(app, frame))?;
 
-    let client = match &app.api_client {
-        Some(c) => c,
-        None => return Ok(()),
+    let Some(client) = &app.api_client else {
+        return Ok(());
     };
 
-    let summary = app.text_area_state.value().to_string();
+    let summary = app.text_area_state.value().clone();
 
     match client
         .evaluate_summary(app.original_text.clone(), summary)
@@ -99,8 +98,8 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
                 app.stats
                     .add_result_with_evaluation(evaluation_passed, Some(scores));
                 if let Err(e) = app.stats.save() {
-                    app.status_message = format!("警告: 統計の保存に失敗しました: {}", e);
-                    eprintln!("統計の保存に失敗しました: {}", e);
+                    app.status_message = format!("警告: 統計の保存に失敗しました: {e}");
+                    eprintln!("統計の保存に失敗しました: {e}");
                 }
             }
             Err(_) => app.fail_evaluation_format(),

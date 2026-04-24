@@ -3,9 +3,7 @@
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
-
-  "rust-analyzer.rustfmt.enableRangeFormatting": true,
-
+  "evenBetterToml.schema.enabled": false,
   "rust-analyzer.checkOnSave": true,
   "rust-analyzer.check.command": "clippy"
 }

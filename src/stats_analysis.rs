@@ -33,7 +33,8 @@ pub fn calculate_weekly_stats(
     let mut weekly_stats = Vec::with_capacity(weeks);
 
     for week in 0..weeks {
-        let week_start = now - chrono::Duration::weeks((weeks - week - 1) as i64);
+        let offset = i64::try_from(weeks - week - 1).unwrap_or(i64::MAX);
+        let week_start = now - chrono::Duration::weeks(offset);
         let week_end = week_start + chrono::Duration::weeks(1);
         let (correct, incorrect) = count_results_in_range(results, week_start, week_end);
 
@@ -49,7 +50,8 @@ pub fn calculate_weekly_stats(
 
 pub fn get_recent_evaluation_summary(results: &[TrainingResult], days: usize) -> EvaluationSummary {
     let today = Local::now().date_naive();
-    let start_date = today - chrono::Duration::days((days.saturating_sub(1)) as i64);
+    let start_date =
+        today - chrono::Duration::days(i64::try_from(days.saturating_sub(1)).unwrap_or(i64::MAX));
 
     let mut importance_scores = Vec::new();
     let mut conciseness_scores = Vec::new();
@@ -79,8 +81,8 @@ pub fn calculate_score_stats(scores: &[u8]) -> Option<EvaluationScoreStats> {
         return None;
     }
 
-    let sum: u32 = scores.iter().map(|&value| value as u32).sum();
-    let average = sum as f32 / scores.len() as f32;
+    let sum: u16 = scores.iter().map(|&value| u16::from(value)).sum();
+    let average = f32::from(sum) / f32::from(u16::try_from(scores.len()).unwrap_or(u16::MAX));
     let median = calculate_median(scores);
 
     Some(EvaluationScoreStats { average, median })
@@ -92,16 +94,18 @@ pub fn calculate_median(scores: &[u8]) -> f32 {
 
     let mid = sorted.len() / 2;
     if sorted.len() % 2 == 1 {
-        sorted[mid] as f32
+        f32::from(*sorted.get(mid).unwrap_or(&0))
     } else {
-        (sorted[mid - 1] as f32 + sorted[mid] as f32) / 2.0
+        let left = f32::from(*sorted.get(mid - 1).unwrap_or(&0));
+        let right = f32::from(*sorted.get(mid).unwrap_or(&0));
+        f32::midpoint(left, right)
     }
 }
 
 fn initialize_daily_stats(days: usize, today: NaiveDate) -> HashMap<NaiveDate, DailyStats> {
     let mut daily_map = HashMap::new();
     for i in 0..days {
-        let date = today - chrono::Duration::days(i as i64);
+        let date = today - chrono::Duration::days(i64::try_from(i).unwrap_or(i64::MAX));
         daily_map.insert(date, DailyStats::default());
     }
     daily_map
