@@ -35,6 +35,27 @@ emit_stop() {
   printf '%s\n' "$(jq -nc --arg msg "${msg}" '{continue:false, stopReason:$msg, systemMessage:$msg}')"
 }
 
+verify_cargo_manifest_policy() {
+  if git diff --quiet -- Cargo.toml Cargo.lock; then
+    return 0
+  fi
+
+  echo "Cargo.toml / Cargo.lock changed. Review required:" >&2
+  git diff -- Cargo.toml Cargo.lock >&2
+
+  if git diff -- Cargo.toml Cargo.lock | grep -E '^-.*(deny|warn|allow|pedantic|unwrap_used|expect_used|dbg_macro|allow_attributes|lints\.clippy|lints)' >/dev/null; then
+    echo "ERROR: Cargo.toml / Cargo.lock appears to weaken lint policy." >&2
+    return 1
+  fi
+
+  return 0
+}
+
+if ! verify_cargo_manifest_policy; then
+  emit_continue "Cargo.toml / Cargo.lock changed in a way that appears to weaken lint policy. Revert the lint-policy change and fix the Rust source instead."
+  exit 0
+fi
+
 if [ "${PHASE}" = "done" ]; then
   emit_stop "Rust validation pipeline already completed."
   exit 0
