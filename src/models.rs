@@ -33,8 +33,8 @@ impl Badge {
     /// Get the display text for this badge
     pub fn get_display_text(&self) -> String {
         match &self.badge_type {
-            BadgeType::ConsecutiveStreak(n) => format!("{}連", n),
-            BadgeType::CumulativeMilestone(n) => format!("累積{}", n),
+            BadgeType::ConsecutiveStreak(n) => format!("{n}連"),
+            BadgeType::CumulativeMilestone(n) => format!("累積{n}"),
         }
     }
 }

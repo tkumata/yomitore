@@ -16,8 +16,7 @@ pub fn init() -> io::Result<Tui> {
     let (width, height) = size()?;
     if width < MIN_WIDTH || height < MIN_HEIGHT {
         return Err(io::Error::other(format!(
-            "ターミナルサイズが不足しています。必要: {}x{}、現在: {}x{}\nターミナルを拡大してから再実行してください。",
-            MIN_WIDTH, MIN_HEIGHT, width, height
+            "ターミナルサイズが不足しています。必要: {MIN_WIDTH}x{MIN_HEIGHT}、現在: {width}x{height}\nターミナルを拡大してから再実行してください。"
         )));
     }
 

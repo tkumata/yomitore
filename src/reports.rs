@@ -11,35 +11,35 @@ const DAYS_IN_MONTH: usize = 30;
 const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 
-const BUDDY_LEVEL_1_A: &str = r#"
+const BUDDY_LEVEL_1_A: &str = r"
           ╱|、
         (˚ˎ。7
-         |、˜〵〜"#;
+         |、˜〵〜";
 
-const BUDDY_LEVEL_1_B: &str = r#"
+const BUDDY_LEVEL_1_B: &str = r"
           ╱|、
         (˚ˎ< 7
-         |、˜〵∫"#;
+         |、˜〵∫";
 
-const BUDDY_LEVEL_2_A: &str = r#"
+const BUDDY_LEVEL_2_A: &str = r"
          ヘ_ヘ
         ミ. . ミ
-         |、 〵〜"#;
+         |、 〵〜";
 
-const BUDDY_LEVEL_2_B: &str = r#"
+const BUDDY_LEVEL_2_B: &str = r"
          ヘ_ヘ
         ミ> . ミ
-         |、 〵∫"#;
+         |、 〵∫";
 
-const BUDDY_LEVEL_3_A: &str = r#"
+const BUDDY_LEVEL_3_A: &str = r"
          ヘ_ヘ
         ミ. . ミ
-         (    )〜"#;
+         (    )〜";
 
-const BUDDY_LEVEL_3_B: &str = r#"
+const BUDDY_LEVEL_3_B: &str = r"
          ヘ_ヘ    ✨
         ミ> < ミ
-         (    )∫"#;
+         (    )∫";
 
 fn get_buddy_ascii(level: u32) -> &'static str {
     let frame = (Local::now().timestamp_millis() / 500) % 2;
@@ -111,9 +111,15 @@ fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
         return lines;
     }
 
-    let importance = summary.importance.as_ref().unwrap();
-    let conciseness = summary.conciseness.as_ref().unwrap();
-    let accuracy = summary.accuracy.as_ref().unwrap();
+    let Some(importance) = summary.importance.as_ref() else {
+        return lines;
+    };
+    let Some(conciseness) = summary.conciseness.as_ref() else {
+        return lines;
+    };
+    let Some(accuracy) = summary.accuracy.as_ref() else {
+        return lines;
+    };
 
     lines.push(Line::from(format!(
         "重要情報: 平均 {:.1} / 中央値 {:.1}",
@@ -145,18 +151,24 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(6), Constraint::Min(0)])
         .split(inner);
+    let [top_area, bottom_area] = vertical_layout.as_ref() else {
+        return;
+    };
 
     let top_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-        .split(vertical_layout[0]);
+        .split(*top_area);
+    let [badge_area, buddy_area] = top_layout.as_ref() else {
+        return;
+    };
 
     let badge_block = Block::default()
         .title("バッジ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let badge_inner = badge_block.inner(top_layout[0]);
-    frame.render_widget(badge_block, top_layout[0]);
+    let badge_inner = badge_block.inner(*badge_area);
+    frame.render_widget(badge_block, *badge_area);
     let badge_content = Text::from(render_badge_section(stats));
     let badge_paragraph = Paragraph::new(badge_content);
     frame.render_widget(badge_paragraph, badge_inner);
@@ -165,8 +177,8 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .title(format!("バディ (レベル {})", stats.buddy.level))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::LightBlue));
-    let buddy_inner = buddy_block.inner(top_layout[1]);
-    frame.render_widget(buddy_block, top_layout[1]);
+    let buddy_inner = buddy_block.inner(*buddy_area);
+    frame.render_widget(buddy_block, *buddy_area);
 
     let buddy_ascii = get_buddy_ascii(stats.buddy.level);
     let required_exp = required_exp_for_level(stats.buddy.level);
@@ -180,36 +192,42 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let horizontal_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(vertical_layout[1]);
+        .split(*bottom_area);
+    let [monthly_area, weekly_area] = horizontal_layout.as_ref() else {
+        return;
+    };
 
     let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
     let monthly_block = Block::default()
         .title("月次 (過去30日)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
-    let monthly_inner = monthly_block.inner(horizontal_layout[0]);
-    frame.render_widget(monthly_block, horizontal_layout[0]);
+    let monthly_inner = monthly_block.inner(*monthly_area);
+    frame.render_widget(monthly_block, *monthly_area);
     if monthly_inner.height >= 6 {
         let monthly_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(6), Constraint::Min(0)])
             .split(monthly_inner);
+        let [summary_area, heatmap_area] = monthly_layout.as_ref() else {
+            return;
+        };
         let summary_text = Text::from(render_evaluation_summary(stats));
         let summary_paragraph = Paragraph::new(summary_text);
-        frame.render_widget(summary_paragraph, monthly_layout[0]);
+        frame.render_widget(summary_paragraph, *summary_area);
 
         let heatmap = create_heatmap_without_badges(
             &daily_stats,
-            monthly_layout[1].width as usize,
-            monthly_layout[1].height as usize,
+            usize::from(heatmap_area.width),
+            usize::from(heatmap_area.height),
         );
         let paragraph = Paragraph::new(heatmap);
-        frame.render_widget(paragraph, monthly_layout[1]);
+        frame.render_widget(paragraph, *heatmap_area);
     } else {
         let heatmap = create_heatmap_without_badges(
             &daily_stats,
-            monthly_inner.width as usize,
-            monthly_inner.height as usize,
+            usize::from(monthly_inner.width),
+            usize::from(monthly_inner.height),
         );
         let paragraph = Paragraph::new(heatmap);
         frame.render_widget(paragraph, monthly_inner);
@@ -220,12 +238,12 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         .title("週次 (過去4週)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Magenta));
-    let weekly_inner = weekly_block.inner(horizontal_layout[1]);
-    frame.render_widget(weekly_block, horizontal_layout[1]);
+    let weekly_inner = weekly_block.inner(*weekly_area);
+    frame.render_widget(weekly_block, *weekly_area);
     let chart = create_bar_chart_without_badges(
         &weekly_stats,
-        weekly_inner.width as usize,
-        weekly_inner.height as usize,
+        usize::from(weekly_inner.width),
+        usize::from(weekly_inner.height),
     );
     let paragraph = Paragraph::new(chart);
     frame.render_widget(paragraph, weekly_inner);
@@ -245,29 +263,34 @@ fn create_heatmap_without_badges(
     let weekdays = vec!["日", "月", "火", "水", "木", "金", "土"];
     let mut header = vec![Span::raw("    ")];
     for day in &weekdays {
-        header.push(Span::raw(format!(" {} ", day)));
+        header.push(Span::raw(format!(" {day} ")));
     }
     lines.push(Line::from(header));
 
-    let start_date = today - chrono::Duration::days((DAYS_IN_MONTH - 1) as i64);
+    let start_offset = i64::try_from(DAYS_IN_MONTH.saturating_sub(1)).unwrap_or(i64::MAX);
+    let start_date = today - chrono::Duration::days(start_offset);
 
-    let start_weekday = start_date.weekday().num_days_from_sunday();
-    let grid_start = start_date - chrono::Duration::days(start_weekday as i64);
+    let start_weekday = i64::from(start_date.weekday().num_days_from_sunday());
+    let grid_start = start_date - chrono::Duration::days(start_weekday);
 
     let days_until_today = (today - grid_start).num_days() + 1;
-    let grid_rows = (days_until_today as usize).div_ceil(7).min(rows);
+    let grid_rows = usize::try_from(days_until_today)
+        .unwrap_or(rows * 7)
+        .div_ceil(7)
+        .min(rows);
 
     for row in 0..grid_rows {
         let mut line_spans = Vec::new();
 
-        let row_start_date = grid_start + chrono::Duration::days((row * 7) as i64);
+        let row_start_offset = i64::try_from(row.saturating_mul(7)).unwrap_or(i64::MAX);
+        let row_start_date = grid_start + chrono::Duration::days(row_start_offset);
         line_spans.push(Span::raw(format!(
             "週{:02} ",
             row_start_date.iso_week().week()
         )));
 
         for col in 0..cols {
-            let date = row_start_date + chrono::Duration::days(col as i64);
+            let date = row_start_date + chrono::Duration::days(i64::from(col));
 
             if date < start_date || date > today {
                 line_spans.push(Span::raw("    "));
@@ -280,7 +303,7 @@ fn create_heatmap_without_badges(
 
                 let (symbol, style) = get_heatmap_cell_style(total, correct);
 
-                line_spans.push(Span::styled(format!(" {} ", symbol), style));
+                line_spans.push(Span::styled(format!(" {symbol} "), style));
             } else {
                 line_spans.push(Span::raw(" -- "));
             }
@@ -373,10 +396,9 @@ fn get_heatmap_cell_style(total: usize, correct: usize) -> (&'static str, Style)
         return ("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold());
     }
 
-    let ratio = correct as f64 / total as f64;
-    let color = if ratio >= 0.8 {
+    let color = if correct.saturating_mul(10) >= total.saturating_mul(8) {
         Color::Green
-    } else if ratio >= 0.5 {
+    } else if correct.saturating_mul(10) >= total.saturating_mul(5) {
         Color::LightGreen
     } else {
         Color::Yellow
@@ -389,6 +411,5 @@ fn calculate_bar_height(value: usize, max_value: usize, max_len: usize) -> usize
     if max_value == 0 {
         return 0;
     }
-    let len = (value as f64 * max_len as f64 / max_value as f64).round() as usize;
-    len.min(max_len)
+    value.saturating_mul(max_len) / max_value
 }

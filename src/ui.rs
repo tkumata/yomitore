@@ -1,9 +1,12 @@
 use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, TEXT_WRAP_MARGIN, ViewMode};
 use crate::help;
 use crate::reports;
+use rat_text::text_area::{TextArea, TextWrap};
 use rat_text::{HasScreenCursor, text_area::TextAreaState};
 use ratatui::{
     prelude::*,
+    style::Modifier,
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
@@ -35,23 +38,29 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         ])
         .split(frame.area());
 
-    render_header(frame, main_layout[0]);
+    let [header_area, body_area, status_area] = main_layout.as_ref() else {
+        return;
+    };
+    render_header(frame, *header_area);
 
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(main_layout[1]);
+        .split(*body_area);
+    let [original_area, summary_area] = content_layout.as_ref() else {
+        return;
+    };
 
-    render_original_text(app, frame, content_layout[0]);
-    render_summary_input(app, frame, content_layout[1]);
+    render_original_text(app, frame, *original_area);
+    render_summary_input(app, frame, *summary_area);
 
-    if app.show_evaluation_overlay {
+    if app.flags.evaluation.show_evaluation_overlay {
         render_evaluation_overlay(app, frame);
     }
 
-    render_status_bar(app, frame, main_layout[2]);
+    render_status_bar(app, frame, *status_area);
 
-    if app.is_editing
+    if app.flags.interaction.is_editing
         && let Some((cx, cy)) = app.text_area_state.screen_cursor()
     {
         frame.set_cursor_position((cx, cy));
@@ -82,7 +91,7 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 
     clamp_textarea_scroll(&mut app.text_area_state);
 
-    let border_style = if app.is_editing {
+    let border_style = if app.flags.interaction.is_editing {
         Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::Blue)
@@ -93,8 +102,6 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    use rat_text::text_area::{TextArea, TextWrap};
-
     let textarea = TextArea::new()
         .block(block)
         .text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN))
@@ -104,7 +111,7 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 }
 
 fn clamp_textarea_scroll(state: &mut TextAreaState) {
-    let max_v = state.len_lines().saturating_sub(1) as usize;
+    let max_v = usize::try_from(state.len_lines().saturating_sub(1)).unwrap_or(usize::MAX);
     if state.vscroll.offset > max_v {
         state.vscroll.offset = max_v;
     }
@@ -170,7 +177,7 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     let black_background = Paragraph::new("").style(Style::default().bg(Color::Black));
     frame.render_widget(black_background, overlay_area);
 
-    let border_color = if app.evaluation_passed {
+    let border_color = if app.flags.evaluation.evaluation_passed {
         Color::Green
     } else {
         Color::Red
@@ -196,10 +203,8 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
 
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::TOP);
-    let status_text = format!(
-        " {} | r: レポート | h: ヘルプ | q: 終了 ",
-        app.status_message
-    );
+    let status_message = &app.status_message;
+    let status_text = format!(" {status_message} | r: レポート | h: ヘルプ | q: 終了 ");
     let paragraph = Paragraph::new(status_text)
         .alignment(Alignment::Right)
         .block(block);
@@ -215,10 +220,12 @@ fn render_report_view(app: &App, frame: &mut Frame) {
             Constraint::Length(3),
         ])
         .split(frame.area());
-
-    render_header(frame, layout[0]);
-    reports::render_unified_report(frame, layout[1], &app.stats);
-    render_status_bar(app, frame, layout[2]);
+    let [header_area, body_area, status_area] = layout.as_ref() else {
+        return;
+    };
+    render_header(frame, *header_area);
+    reports::render_unified_report(frame, *body_area, &app.stats);
+    render_status_bar(app, frame, *status_area);
 }
 
 fn render_menu_view(app: &App, frame: &mut Frame) {
@@ -230,8 +237,10 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
             Constraint::Length(3),
         ])
         .split(frame.area());
-
-    render_header(frame, layout[0]);
+    let [header_area, body_area, status_area] = layout.as_ref() else {
+        return;
+    };
+    render_header(frame, *header_area);
 
     let menu_area = Layout::default()
         .direction(Direction::Vertical)
@@ -240,7 +249,10 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
             Constraint::Length(16),
             Constraint::Percentage(20),
         ])
-        .split(layout[1])[1];
+        .split(*body_area);
+    let Some(&menu_area) = menu_area.get(1) else {
+        return;
+    };
 
     let menu_area = Layout::default()
         .direction(Direction::Horizontal)
@@ -249,7 +261,10 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
             Constraint::Percentage(40),
             Constraint::Percentage(30),
         ])
-        .split(menu_area)[1];
+        .split(menu_area);
+    let Some(&menu_area) = menu_area.get(1) else {
+        return;
+    };
 
     let block = Block::default()
         .title("文字数を選択してください")
@@ -257,24 +272,15 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let mut menu_text = String::new();
-    menu_text.push_str("\n\n");
+    let menu_lines = build_menu_lines(app.selected_menu_item, block.inner(menu_area).height);
 
-    for (i, &count) in MENU_OPTIONS.iter().enumerate() {
-        if i == app.selected_menu_item {
-            menu_text.push_str(&format!("  > {} 文字 <\n\n", count));
-        } else {
-            menu_text.push_str(&format!("    {} 文字\n\n", count));
-        }
-    }
-
-    let paragraph = Paragraph::new(menu_text)
+    let paragraph = Paragraph::new(menu_lines)
         .block(block)
         .alignment(Alignment::Center)
         .style(Style::default());
 
     frame.render_widget(paragraph, menu_area);
-    render_status_bar(app, frame, layout[2]);
+    render_status_bar(app, frame, *status_area);
 }
 
 fn render_help_view(app: &App, frame: &mut Frame) {
@@ -286,8 +292,10 @@ fn render_help_view(app: &App, frame: &mut Frame) {
             Constraint::Length(3),
         ])
         .split(frame.area());
-
-    render_header(frame, layout[0]);
+    let [header_area, body_area, status_area] = layout.as_ref() else {
+        return;
+    };
+    render_header(frame, *header_area);
 
     let help_content = help::get_help_content();
     let help_text = if help_content.is_empty() {
@@ -308,8 +316,40 @@ fn render_help_view(app: &App, frame: &mut Frame) {
         .scroll((app.help_scroll, 0))
         .style(Style::default());
 
-    frame.render_widget(paragraph, layout[1]);
-    render_status_bar(app, frame, layout[2]);
+    frame.render_widget(paragraph, *body_area);
+    render_status_bar(app, frame, *status_area);
+}
+
+fn build_menu_lines(selected_menu_item: usize, inner_height: u16) -> Vec<Line<'static>> {
+    let content_height = u16::try_from(MENU_OPTIONS.len()).unwrap_or(u16::MAX) * 2 - 1;
+    let top_padding = inner_height.saturating_sub(content_height) / 2;
+
+    let mut lines = Vec::with_capacity(usize::from(top_padding) + MENU_OPTIONS.len() * 2 - 1);
+    lines.extend(std::iter::repeat_n(
+        Line::from(""),
+        usize::from(top_padding),
+    ));
+
+    for (index, &count) in MENU_OPTIONS.iter().enumerate() {
+        lines.push(build_menu_option_line(count, index == selected_menu_item));
+        if index + 1 != MENU_OPTIONS.len() {
+            lines.push(Line::from(""));
+        }
+    }
+
+    lines
+}
+
+fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
+    let style = if is_selected {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    Line::from(Span::styled(format!("{count:>4} 文字"), style))
 }
 
 #[cfg(test)]
@@ -360,5 +400,47 @@ mod tests {
         assert!(overlay.y >= OVERLAY_MARGIN);
         assert!(overlay.x + overlay.width <= full_area.width - OVERLAY_MARGIN);
         assert!(overlay.y + overlay.height <= full_area.height - OVERLAY_MARGIN);
+    }
+
+    #[test]
+    fn test_build_menu_lines_center_selected_without_widening() {
+        let lines = build_menu_lines(1, 14);
+
+        assert_eq!(lines.len(), 10);
+        assert!(lines.iter().take(3).all(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .is_empty()
+        }));
+
+        let selected_line = lines.iter().find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                == " 720 文字"
+        });
+        assert!(selected_line.is_some(), "selected menu line should exist");
+        let Some(selected_line) = selected_line else {
+            return;
+        };
+
+        let selected_text: String = selected_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(selected_text, " 720 文字");
+        assert!(
+            !selected_line.spans.is_empty(),
+            "selected menu line should contain a span"
+        );
+        let Some(selected_span) = selected_line.spans.first() else {
+            return;
+        };
+        assert_eq!(selected_span.style.fg, Some(Color::Cyan));
+        assert!(selected_span.style.add_modifier.contains(Modifier::BOLD));
     }
 }

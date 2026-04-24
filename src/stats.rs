@@ -1,4 +1,7 @@
-use crate::models::*;
+use crate::models::{
+    Badge, BadgeType, Buddy, DailyStats, EvaluationScores, EvaluationSummary, TrainingResult,
+    WeeklyStats,
+};
 use crate::stats_analysis;
 use chrono::{DateTime, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
@@ -292,12 +295,15 @@ mod tests {
 
         let daily_stats = calculate_daily_stats(&stats.results, 7, today);
 
-        let today_stats = daily_stats.get(&today).unwrap();
+        let today_stats = daily_stats.get(&today).cloned().unwrap_or_default();
         assert_eq!(today_stats.correct, 1);
         assert_eq!(today_stats.incorrect, 1);
 
         let yesterday_date = yesterday.date_naive();
-        let yesterday_stats = daily_stats.get(&yesterday_date).unwrap();
+        let yesterday_stats = daily_stats
+            .get(&yesterday_date)
+            .cloned()
+            .unwrap_or_default();
         assert_eq!(yesterday_stats.correct, 1);
         assert_eq!(yesterday_stats.incorrect, 0);
     }
@@ -327,11 +333,22 @@ mod tests {
 
         let weekly_stats = calculate_weekly_stats(&stats.results, 4, now);
 
-        let this_week_stats = weekly_stats.last().unwrap();
+        let this_week_stats = weekly_stats.last().cloned().unwrap_or(WeeklyStats {
+            week_number: 0,
+            correct: 0,
+            incorrect: 0,
+        });
         assert_eq!(this_week_stats.correct, 1);
         assert_eq!(this_week_stats.incorrect, 0);
 
-        let last_week_stats = &weekly_stats[weekly_stats.len() - 2];
+        let last_week_stats = weekly_stats
+            .get(weekly_stats.len().saturating_sub(2))
+            .cloned()
+            .unwrap_or(WeeklyStats {
+                week_number: 0,
+                correct: 0,
+                incorrect: 0,
+            });
         assert_eq!(last_week_stats.correct, 0);
         assert_eq!(last_week_stats.incorrect, 2);
     }
@@ -372,20 +389,31 @@ mod tests {
 
         let summary = stats.get_recent_evaluation_summary(30);
         assert_eq!(summary.count, 2);
-        assert_eq!(summary.importance.as_ref().unwrap().average, 4.0);
-        assert_eq!(summary.importance.as_ref().unwrap().median, 4.0);
-        assert_eq!(summary.conciseness.as_ref().unwrap().average, 2.5);
-        assert_eq!(summary.conciseness.as_ref().unwrap().median, 2.5);
-        assert_eq!(summary.accuracy.as_ref().unwrap().average, 4.0);
-        assert_eq!(summary.accuracy.as_ref().unwrap().median, 4.0);
+        let importance = summary.importance.as_ref().map(|s| (s.average, s.median));
+        assert!(importance.is_some());
+        let importance = importance.unwrap_or((0.0, 0.0));
+        assert!((importance.0 - 4.0).abs() < f32::EPSILON);
+        assert!((importance.1 - 4.0).abs() < f32::EPSILON);
+
+        let conciseness = summary.conciseness.as_ref().map(|s| (s.average, s.median));
+        assert!(conciseness.is_some());
+        let conciseness = conciseness.unwrap_or((0.0, 0.0));
+        assert!((conciseness.0 - 2.5).abs() < f32::EPSILON);
+        assert!((conciseness.1 - 2.5).abs() < f32::EPSILON);
+
+        let accuracy = summary.accuracy.as_ref().map(|s| (s.average, s.median));
+        assert!(accuracy.is_some());
+        let accuracy = accuracy.unwrap_or((0.0, 0.0));
+        assert!((accuracy.0 - 4.0).abs() < f32::EPSILON);
+        assert!((accuracy.1 - 4.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_calculate_median_edge_cases() {
-        assert_eq!(calculate_median(&[5]), 5.0);
-        assert_eq!(calculate_median(&[1, 5]), 3.0);
-        assert_eq!(calculate_median(&[10, 2, 5]), 5.0);
-        assert_eq!(calculate_median(&[1, 2, 3, 4]), 2.5);
+        assert!((calculate_median(&[5]) - 5.0).abs() < f32::EPSILON);
+        assert!((calculate_median(&[1, 5]) - 3.0).abs() < f32::EPSILON);
+        assert!((calculate_median(&[10, 2, 5]) - 5.0).abs() < f32::EPSILON);
+        assert!((calculate_median(&[1, 2, 3, 4]) - 2.5).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -482,6 +510,10 @@ mod tests {
 
         assert_eq!(stats.buddy.level, 1);
         assert_eq!(stats.buddy.exp, 0);
-        assert!(stats.last_training_date.unwrap() > Local::now() - chrono::Duration::minutes(1));
+        assert!(
+            stats
+                .last_training_date
+                .is_some_and(|date| date > Local::now() - chrono::Duration::minutes(1))
+        );
     }
 }
