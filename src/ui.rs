@@ -5,9 +5,10 @@ use rat_text::text_area::{TextArea, TextWrap};
 use rat_text::{HasScreenCursor, text_area::TextAreaState};
 use ratatui::{
     prelude::*,
+    style::Modifier,
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
-use std::fmt::Write as _;
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.update_terminal_size(frame.area().width, frame.area().height);
@@ -271,18 +272,9 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let mut menu_text = String::new();
-    menu_text.push_str("\n\n");
+    let menu_lines = build_menu_lines(app.selected_menu_item, block.inner(menu_area).height);
 
-    for (i, &count) in MENU_OPTIONS.iter().enumerate() {
-        if i == app.selected_menu_item {
-            let _ = write!(menu_text, "> {count} 文字 <\n\n");
-        } else {
-            let _ = write!(menu_text, "{count} 文字\n\n");
-        }
-    }
-
-    let paragraph = Paragraph::new(menu_text)
+    let paragraph = Paragraph::new(menu_lines)
         .block(block)
         .alignment(Alignment::Center)
         .style(Style::default());
@@ -326,6 +318,38 @@ fn render_help_view(app: &App, frame: &mut Frame) {
 
     frame.render_widget(paragraph, *body_area);
     render_status_bar(app, frame, *status_area);
+}
+
+fn build_menu_lines(selected_menu_item: usize, inner_height: u16) -> Vec<Line<'static>> {
+    let content_height = u16::try_from(MENU_OPTIONS.len()).unwrap_or(u16::MAX) * 2 - 1;
+    let top_padding = inner_height.saturating_sub(content_height) / 2;
+
+    let mut lines = Vec::with_capacity(usize::from(top_padding) + MENU_OPTIONS.len() * 2 - 1);
+    lines.extend(std::iter::repeat_n(
+        Line::from(""),
+        usize::from(top_padding),
+    ));
+
+    for (index, &count) in MENU_OPTIONS.iter().enumerate() {
+        lines.push(build_menu_option_line(count, index == selected_menu_item));
+        if index + 1 != MENU_OPTIONS.len() {
+            lines.push(Line::from(""));
+        }
+    }
+
+    lines
+}
+
+fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
+    let style = if is_selected {
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+
+    Line::from(Span::styled(format!("{count:>4} 文字"), style))
 }
 
 #[cfg(test)]
@@ -376,5 +400,47 @@ mod tests {
         assert!(overlay.y >= OVERLAY_MARGIN);
         assert!(overlay.x + overlay.width <= full_area.width - OVERLAY_MARGIN);
         assert!(overlay.y + overlay.height <= full_area.height - OVERLAY_MARGIN);
+    }
+
+    #[test]
+    fn test_build_menu_lines_center_selected_without_widening() {
+        let lines = build_menu_lines(1, 14);
+
+        assert_eq!(lines.len(), 10);
+        assert!(lines.iter().take(3).all(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .is_empty()
+        }));
+
+        let selected_line = lines.iter().find(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                == " 720 文字"
+        });
+        assert!(selected_line.is_some(), "selected menu line should exist");
+        let Some(selected_line) = selected_line else {
+            return;
+        };
+
+        let selected_text: String = selected_line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect();
+        assert_eq!(selected_text, " 720 文字");
+        assert!(
+            !selected_line.spans.is_empty(),
+            "selected menu line should contain a span"
+        );
+        let Some(selected_span) = selected_line.spans.first() else {
+            return;
+        };
+        assert_eq!(selected_span.style.fg, Some(Color::Cyan));
+        assert!(selected_span.style.add_modifier.contains(Modifier::BOLD));
     }
 }
