@@ -19,7 +19,8 @@ const MENU_TITLE_ART: [&str; 6] = [
     "   ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝",
 ];
 const MENU_TITLE_COLOR: Color = Color::LightBlue;
-const MENU_TITLE_GAP_HEIGHT: u16 = 3;
+const MENU_LOGO_GAP_HEIGHT: u16 = 1;
+const MENU_TITLE_BLOCK_GAP_HEIGHT: u16 = 3;
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.update_terminal_size(frame.area().width, frame.area().height);
@@ -251,24 +252,31 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     let [header_area, body_area, status_area] = layout.as_ref() else {
         return;
     };
-    render_header(frame, *header_area);
+    frame.render_widget(Paragraph::new(""), *header_area);
 
     let body_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(menu_title_height()),
-            Constraint::Length(MENU_TITLE_GAP_HEIGHT),
+            Constraint::Length(menu_logo_height()),
+            Constraint::Length(MENU_LOGO_GAP_HEIGHT),
+            Constraint::Length(1),
+            Constraint::Length(MENU_TITLE_BLOCK_GAP_HEIGHT),
             Constraint::Length(menu_block_height()),
             Constraint::Min(0),
         ])
         .split(*body_area);
-    let [title_area, _, menu_area, _] = body_layout.as_ref() else {
+    let [logo_area, _, title_area, _, menu_area, _] = body_layout.as_ref() else {
         return;
     };
 
-    let title = Paragraph::new(build_menu_title_lines())
+    let logo = Paragraph::new(build_menu_title_lines())
         .alignment(Alignment::Center)
         .style(Style::default().fg(MENU_TITLE_COLOR));
+    frame.render_widget(logo, *logo_area);
+
+    let title = Paragraph::new(" yomitore: 読解力トレーニング ")
+        .style(Style::new().bold())
+        .alignment(Alignment::Center);
     frame.render_widget(title, *title_area);
 
     let menu_area = Layout::default()
@@ -364,7 +372,7 @@ fn build_menu_title_lines() -> Vec<Line<'static>> {
         .collect()
 }
 
-fn menu_title_height() -> u16 {
+fn menu_logo_height() -> u16 {
     u16::try_from(MENU_TITLE_ART.len()).unwrap_or(u16::MAX)
 }
 
@@ -506,7 +514,10 @@ mod tests {
     }
 
     #[test]
-    fn test_menu_block_height_matches_menu_options() {
+    fn test_menu_layout_heights() {
+        assert_eq!(menu_logo_height(), 6);
+        assert_eq!(MENU_LOGO_GAP_HEIGHT, 1);
+        assert_eq!(MENU_TITLE_BLOCK_GAP_HEIGHT, 3);
         assert_eq!(menu_options_height(), 7);
         assert_eq!(menu_block_height(), 9);
     }
