@@ -19,6 +19,7 @@ const MENU_TITLE_ART: [&str; 6] = [
     "   ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝",
 ];
 const MENU_TITLE_COLOR: Color = Color::LightBlue;
+const MENU_TITLE_GAP_HEIGHT: u16 = 3;
 
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.update_terminal_size(frame.area().width, frame.area().height);
@@ -256,11 +257,12 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(menu_title_height()),
-            Constraint::Length(1),
+            Constraint::Length(MENU_TITLE_GAP_HEIGHT),
+            Constraint::Length(menu_block_height()),
             Constraint::Min(0),
         ])
         .split(*body_area);
-    let [title_area, _, menu_body_area] = body_layout.as_ref() else {
+    let [title_area, _, menu_area, _] = body_layout.as_ref() else {
         return;
     };
 
@@ -270,26 +272,14 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     frame.render_widget(title, *title_area);
 
     let menu_area = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(20),
-            Constraint::Length(16),
-            Constraint::Percentage(20),
-        ])
-        .split(*menu_body_area);
-    let Some(&menu_area) = menu_area.get(1) else {
-        return;
-    };
-
-    let menu_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(30),
             Constraint::Percentage(40),
             Constraint::Percentage(30),
         ])
-        .split(menu_area);
-    let Some(&menu_area) = menu_area.get(1) else {
+        .split(*menu_area);
+    let [_, menu_area, _] = menu_area.as_ref() else {
         return;
     };
 
@@ -299,14 +289,14 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let menu_lines = build_menu_lines(app.selected_menu_item, block.inner(menu_area).height);
+    let menu_lines = build_menu_lines(app.selected_menu_item, block.inner(*menu_area).height);
 
     let paragraph = Paragraph::new(menu_lines)
         .block(block)
         .alignment(Alignment::Center)
         .style(Style::default());
 
-    frame.render_widget(paragraph, menu_area);
+    frame.render_widget(paragraph, *menu_area);
     render_status_bar(app, frame, *status_area);
 }
 
@@ -376,6 +366,17 @@ fn build_menu_title_lines() -> Vec<Line<'static>> {
 
 fn menu_title_height() -> u16 {
     u16::try_from(MENU_TITLE_ART.len()).unwrap_or(u16::MAX)
+}
+
+fn menu_options_height() -> u16 {
+    u16::try_from(MENU_OPTIONS.len())
+        .unwrap_or(u16::MAX)
+        .saturating_mul(2)
+        .saturating_sub(1)
+}
+
+fn menu_block_height() -> u16 {
+    menu_options_height().saturating_add(2)
 }
 
 fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
@@ -502,5 +503,11 @@ mod tests {
             return;
         };
         assert_eq!(first_span.style.fg, Some(MENU_TITLE_COLOR));
+    }
+
+    #[test]
+    fn test_menu_block_height_matches_menu_options() {
+        assert_eq!(menu_options_height(), 7);
+        assert_eq!(menu_block_height(), 9);
     }
 }
