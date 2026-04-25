@@ -3,4 +3,4 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 /target
-.codex/state/
+.agent-hooks/state/
