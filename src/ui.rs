@@ -10,6 +10,16 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+const MENU_TITLE_ART: [&str; 6] = [
+    "██╗   ██╗ ██████╗ ███╗   ███╗██╗████████╗ ██████╗ ██████╗ ███████╗",
+    "╚██╗ ██╔╝██╔═══██╗████╗ ████║██║╚══██╔══╝██╔═══██╗██╔══██╗██╔════╝",
+    " ╚████╔╝ ██║   ██║██╔████╔██║██║   ██║   ██║   ██║██████╔╝█████╗  ",
+    "  ╚██╔╝  ██║   ██║██║╚██╔╝██║██║   ██║   ██║   ██║██╔══██╗██╔══╝  ",
+    "   ██║   ╚██████╔╝██║ ╚═╝ ██║██║   ██║   ╚██████╔╝██║  ██║███████╗",
+    "   ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚══════╝",
+];
+const MENU_TITLE_COLOR: Color = Color::LightBlue;
+
 pub fn render(app: &mut App, frame: &mut Frame) {
     app.update_terminal_size(frame.area().width, frame.area().height);
 
@@ -242,6 +252,23 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     };
     render_header(frame, *header_area);
 
+    let body_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(menu_title_height()),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(*body_area);
+    let [title_area, _, menu_body_area] = body_layout.as_ref() else {
+        return;
+    };
+
+    let title = Paragraph::new(build_menu_title_lines())
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(MENU_TITLE_COLOR));
+    frame.render_widget(title, *title_area);
+
     let menu_area = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -249,7 +276,7 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
             Constraint::Length(16),
             Constraint::Percentage(20),
         ])
-        .split(*body_area);
+        .split(*menu_body_area);
     let Some(&menu_area) = menu_area.get(1) else {
         return;
     };
@@ -338,6 +365,17 @@ fn build_menu_lines(selected_menu_item: usize, inner_height: u16) -> Vec<Line<'s
     }
 
     lines
+}
+
+fn build_menu_title_lines() -> Vec<Line<'static>> {
+    MENU_TITLE_ART
+        .into_iter()
+        .map(|art| Line::from(Span::styled(art, Style::default().fg(MENU_TITLE_COLOR))))
+        .collect()
+}
+
+fn menu_title_height() -> u16 {
+    u16::try_from(MENU_TITLE_ART.len()).unwrap_or(u16::MAX)
 }
 
 fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
@@ -442,5 +480,27 @@ mod tests {
         };
         assert_eq!(selected_span.style.fg, Some(Color::Cyan));
         assert!(selected_span.style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn test_build_menu_title_lines() {
+        let lines = build_menu_title_lines();
+
+        assert_eq!(lines.len(), MENU_TITLE_ART.len());
+        let Some(first_line) = lines.first() else {
+            return;
+        };
+        assert!(
+            first_line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+                .starts_with("██╗")
+        );
+        let Some(first_span) = first_line.spans.first() else {
+            return;
+        };
+        assert_eq!(first_span.style.fg, Some(MENU_TITLE_COLOR));
     }
 }
