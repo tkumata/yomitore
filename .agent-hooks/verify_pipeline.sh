@@ -84,12 +84,17 @@ fi
 
 if [ "${PHASE}" = "build_pending" ]; then
   if run_and_log "build" "make build"; then
-    echo "done" > "${STATE_FILE}"
-    emit_stop "make build passed. Task complete."
+    echo "review_pending" > "${STATE_FILE}"
+    emit_continue "make build passed. Code review is required before stopping. Run ./.agent-hooks/review_pipeline.sh manually on the current diff, fix actionable findings, then approve."
   else
     echo "build_pending" > "${STATE_FILE}"
     emit_continue "make build failed. Fix the root cause and continue until build passes. Review .agent-hooks/state/logs/build.log before editing."
   fi
+  exit 0
+fi
+
+if [ "${PHASE}" = "review_pending" ]; then
+  emit_continue "Code review is required before stopping. Run ./.agent-hooks/review_pipeline.sh manually on the current diff, fix actionable findings, then continue."
   exit 0
 fi
 
