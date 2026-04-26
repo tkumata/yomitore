@@ -5,6 +5,7 @@ AGENT="${1:-codex}"
 
 STATE_DIR=".agent-hooks/state"
 STATE_FILE="${STATE_DIR}/pipeline_state"
+SNAPSHOT_FILE="${STATE_DIR}/review_snapshot"
 LOG_DIR="${STATE_DIR}/logs"
 
 mkdir -p "${LOG_DIR}"
@@ -52,8 +53,7 @@ emit_stop() {
 
   case "${AGENT}" in
     codex)
-      jq -nc --arg msg "${msg}" \
-        '{continue:false, stopReason:$msg, systemMessage:$msg}'
+      jq -nc '{continue:false}'
       ;;
     copilot)
       jq -nc --arg msg "${msg}" \
@@ -68,6 +68,10 @@ emit_stop() {
 
 summarize_diff() {
   git diff --stat -- . ':(exclude).agent-hooks/state'
+}
+
+worktree_signature() {
+  git status --short --untracked-files=all -- . ':(exclude).agent-hooks/state' | shasum -a 256 | awk '{print $1}'
 }
 
 if [ "${PHASE}" != "review_pending" ]; then
@@ -99,6 +103,7 @@ REVIEW_FINDINGS="$(jq -r '
 ' <<<"${INPUT}")"
 
 if [ "${REVIEW_DECISION}" = "approve" ] || [ "${REVIEW_DECISION}" = "pass" ] || [ "${REVIEW_DECISION}" = "approved" ]; then
+  worktree_signature > "${SNAPSHOT_FILE}"
   echo "done" > "${STATE_FILE}"
   emit_stop "Code review passed. Task complete."
   exit 0

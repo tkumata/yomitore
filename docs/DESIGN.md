@@ -5,6 +5,7 @@
 - 起動直後の文字数選択メニューは、選択状態によって文字列幅が変わらないようにする
 - 選択状態は文字列の増減ではなくスタイルで表現し、メニュー全体が中央に見えることを優先する
 - 起動直後の縦配置は、最上部の 1 行余白、タイトルロゴ、1 行余白、アプリ名、3 行余白、文字数選択ブロックの順に固定する
+- 文字数選択ブロック内は選択肢を 1 行ずつ並べ、項目間に空行を入れない
 
 ## 評価結果ダイアログ余白追加
 
@@ -38,6 +39,7 @@
 - `build` 成功後は `review_pending` に遷移し、`review_pipeline.sh` を手動実行して完了可否を確定する
 - `review_pending` の間は `Stop` / `agentStop` を完了扱いにせず、レビュー要求として継続応答する
 - レビューで指摘が残る場合は `review_pending` に留め、修正後に再レビューする
+- `review_pipeline.sh` 承認時に作業ツリーのスナップショットを保存し、`done` の後にその差分が変わった場合だけ次の `Stop` で `check_pending` に戻して再点火する
 
 ```mermaid
 stateDiagram-v2
@@ -45,5 +47,6 @@ stateDiagram-v2
   check_pending --> build_pending: make check passed
   build_pending --> review_pending: make build passed
   review_pending --> done: review_pipeline.sh approved
+  done --> check_pending: worktree signature changed
   review_pending --> review_pending: Findings remain
 ```
