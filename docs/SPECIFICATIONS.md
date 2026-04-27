@@ -245,7 +245,13 @@ app.terminal_width = frame.area().width;
 app.terminal_height = frame.area().height;
 ```
 
-### 3.6. 統計管理 (stats.rs)
+### 3.6.1. メニュー描画詳細 (ui.rs)
+
+- 文字数選択ブロックは `MENU_OPTIONS` を 1 行ずつ描画する
+- 選択状態は文字列幅の増減ではなくスタイルで表現する
+- 選択肢の間に空行を挟まないことで、ブロック内の余白を最小化する
+
+### 3.7. 統計管理 (stats.rs)
 
 **定数定義**:
 
@@ -324,7 +330,7 @@ pub struct EvaluationScores {
   - 存在しない場合は新規作成
   - 読み込み後、`recalculate_streak()`と`rebuild_badges_from_history()`を実行
 
-### 3.7. テスト戦略 (api_client.rs, app.rs)
+### 3.8. テスト戦略 (api_client.rs, app.rs)
 
 **目的**: 実際の GroqCloud API を利用せずに、評価結果の判定までを自動テストする。
 

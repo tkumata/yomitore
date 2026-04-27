@@ -6,6 +6,7 @@ EVENT="${2:-Stop}"
 
 STATE_DIR=".agent-hooks/state"
 STATE_FILE="${STATE_DIR}/pipeline_state"
+SNAPSHOT_FILE="${STATE_DIR}/review_snapshot"
 LOG_DIR="${STATE_DIR}/logs"
 
 mkdir -p "${LOG_DIR}"
@@ -52,8 +53,7 @@ emit_stop() {
 
   case "${AGENT}" in
     codex)
-      jq -nc --arg msg "${msg}" \
-        '{continue:false, stopReason:$msg, systemMessage:$msg}'
+      jq -nc '{continue:false}'
       ;;
     copilot)
       jq -nc --arg msg "${msg}" \
@@ -65,6 +65,24 @@ emit_stop() {
       ;;
   esac
 }
+
+worktree_signature() {
+  git status --short --untracked-files=all -- . ':(exclude).agent-hooks/state' | shasum -a 256 | awk '{print $1}'
+}
+
+if [ "${PHASE}" = "done" ]; then
+  CURRENT_SIGNATURE="$(worktree_signature)"
+  SAVED_SIGNATURE=""
+
+  if [ -f "${SNAPSHOT_FILE}" ]; then
+    SAVED_SIGNATURE="$(cat "${SNAPSHOT_FILE}")"
+  fi
+
+  if [ -n "${CURRENT_SIGNATURE}" ] && [ "${CURRENT_SIGNATURE}" != "${SAVED_SIGNATURE}" ]; then
+    echo "check_pending" > "${STATE_FILE}"
+    PHASE="check_pending"
+  fi
+fi
 
 if [ "${PHASE}" = "done" ]; then
   emit_stop "Validation pipeline already completed."
@@ -84,12 +102,17 @@ fi
 
 if [ "${PHASE}" = "build_pending" ]; then
   if run_and_log "build" "make build"; then
-    echo "done" > "${STATE_FILE}"
-    emit_stop "make build passed. Task complete."
+    echo "review_pending" > "${STATE_FILE}"
+    emit_continue "make build passed. Code review is required before stopping. Run ./.agent-hooks/review_pipeline.sh manually on the current diff, fix actionable findings, then approve."
   else
     echo "build_pending" > "${STATE_FILE}"
     emit_continue "make build failed. Fix the root cause and continue until build passes. Review .agent-hooks/state/logs/build.log before editing."
   fi
+  exit 0
+fi
+
+if [ "${PHASE}" = "review_pending" ]; then
+  emit_continue "Code review is required before stopping. Run ./.agent-hooks/review_pipeline.sh manually on the current diff, fix actionable findings, then continue."
   exit 0
 fi
 

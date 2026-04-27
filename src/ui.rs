@@ -297,7 +297,7 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let menu_lines = build_menu_lines(app.selected_menu_item, block.inner(*menu_area).height);
+    let menu_lines = build_menu_lines(app.selected_menu_item);
 
     let paragraph = Paragraph::new(menu_lines)
         .block(block)
@@ -345,22 +345,13 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     render_status_bar(app, frame, *status_area);
 }
 
-fn build_menu_lines(selected_menu_item: usize, inner_height: u16) -> Vec<Line<'static>> {
-    let content_height = u16::try_from(MENU_OPTIONS.len()).unwrap_or(u16::MAX) * 2 - 1;
-    let top_padding = inner_height.saturating_sub(content_height) / 2;
-
-    let mut lines = Vec::with_capacity(usize::from(top_padding) + MENU_OPTIONS.len() * 2 - 1);
-    lines.extend(std::iter::repeat_n(
-        Line::from(""),
-        usize::from(top_padding),
-    ));
-
+fn build_menu_lines(selected_menu_item: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(MENU_OPTIONS.len().saturating_add(2));
+    lines.push(Line::default());
     for (index, &count) in MENU_OPTIONS.iter().enumerate() {
         lines.push(build_menu_option_line(count, index == selected_menu_item));
-        if index + 1 != MENU_OPTIONS.len() {
-            lines.push(Line::from(""));
-        }
     }
+    lines.push(Line::default());
 
     lines
 }
@@ -377,14 +368,11 @@ fn menu_logo_height() -> u16 {
 }
 
 fn menu_options_height() -> u16 {
-    u16::try_from(MENU_OPTIONS.len())
-        .unwrap_or(u16::MAX)
-        .saturating_mul(2)
-        .saturating_sub(1)
+    u16::try_from(MENU_OPTIONS.len()).unwrap_or(u16::MAX)
 }
 
 fn menu_block_height() -> u16 {
-    menu_options_height().saturating_add(2)
+    menu_options_height().saturating_add(4)
 }
 
 fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
@@ -451,16 +439,11 @@ mod tests {
 
     #[test]
     fn test_build_menu_lines_center_selected_without_widening() {
-        let lines = build_menu_lines(1, 14);
+        let lines = build_menu_lines(1);
 
-        assert_eq!(lines.len(), 10);
-        assert!(lines.iter().take(3).all(|line| {
-            line.spans
-                .iter()
-                .map(|span| span.content.as_ref())
-                .collect::<String>()
-                .is_empty()
-        }));
+        assert_eq!(lines.len(), MENU_OPTIONS.len().saturating_add(2));
+        assert_eq!(lines.first().map(|line| line.spans.len()), Some(0));
+        assert_eq!(lines.last().map(|line| line.spans.len()), Some(0));
 
         let selected_line = lines.iter().find(|line| {
             line.spans
@@ -518,7 +501,7 @@ mod tests {
         assert_eq!(menu_logo_height(), 6);
         assert_eq!(MENU_LOGO_GAP_HEIGHT, 1);
         assert_eq!(MENU_TITLE_BLOCK_GAP_HEIGHT, 3);
-        assert_eq!(menu_options_height(), 7);
-        assert_eq!(menu_block_height(), 9);
+        assert_eq!(menu_options_height(), 4);
+        assert_eq!(menu_block_height(), 8);
     }
 }
