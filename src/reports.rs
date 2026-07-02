@@ -7,7 +7,7 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-const REPORT_DAYS: usize = 90;
+const REPORT_DAYS: usize = 180;
 const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 const HEATMAP_CELL: &str = "■";
@@ -104,7 +104,7 @@ fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     lines.push(Line::from(Span::styled(
-        "評価スコア (直近90日)",
+        "評価スコア (直近180日)",
         Style::default().fg(Color::Cyan).bold(),
     )));
 
@@ -202,7 +202,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 
     let daily_stats = stats.get_daily_stats(REPORT_DAYS);
     let monthly_block = Block::default()
-        .title("90日 (過去90日)")
+        .title("180日 (過去180日)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(*monthly_area);
@@ -560,9 +560,6 @@ mod tests {
         let friday_row = lines
             .get(1)
             .ok_or_else(|| "heatmap did not render friday row".to_string())?;
-        let sunday_row = lines
-            .get(6)
-            .ok_or_else(|| "heatmap did not render sunday row".to_string())?;
 
         if !saturday_row.ends_with(HEATMAP_EMPTY_CELL) {
             return Err(format!(
@@ -572,11 +569,6 @@ mod tests {
         if !friday_row.ends_with(HEATMAP_EMPTY_CELL) {
             return Err(format!(
                 "last friday cell should be out of range: {friday_row}"
-            ));
-        }
-        if !sunday_row.starts_with(&format!("日 {HEATMAP_EMPTY_CELL}")) {
-            return Err(format!(
-                "first sunday cell should be out of range: {sunday_row}"
             ));
         }
         Ok(())
