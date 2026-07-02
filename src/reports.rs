@@ -7,9 +7,12 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-const DAYS_IN_MONTH: usize = 30;
+const REPORT_DAYS: usize = 90;
 const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
+const HEATMAP_CELL: &str = "■";
+const HEATMAP_EMPTY_CELL: &str = "·";
+const HEATMAP_LABEL_SUFFIX: &str = " ";
 
 const BUDDY_LEVEL_1_A: &str = r"
           ╱|、
@@ -97,11 +100,11 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
 }
 
 fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
-    let summary = stats.get_recent_evaluation_summary(DAYS_IN_MONTH);
+    let summary = stats.get_recent_evaluation_summary(REPORT_DAYS);
     let mut lines = Vec::new();
 
     lines.push(Line::from(Span::styled(
-        "評価スコア (直近30日)",
+        "評価スコア (直近90日)",
         Style::default().fg(Color::Cyan).bold(),
     )));
 
@@ -197,9 +200,9 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         return;
     };
 
-    let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
+    let daily_stats = stats.get_daily_stats(REPORT_DAYS);
     let monthly_block = Block::default()
-        .title("月次 (過去30日)")
+        .title("90日 (過去90日)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(*monthly_area);
@@ -251,49 +254,55 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 
 fn create_heatmap_without_badges(
     daily_stats: &HashMap<NaiveDate, DailyStats>,
+    width: usize,
+    height: usize,
+) -> Text<'static> {
+    create_heatmap_for_date(daily_stats, width, height, Local::now().date_naive())
+}
+
+fn create_heatmap_for_date(
+    daily_stats: &HashMap<NaiveDate, DailyStats>,
     _width: usize,
     _height: usize,
+    today: NaiveDate,
 ) -> Text<'static> {
     let mut lines = Vec::new();
-    let today = Local::now().date_naive();
 
-    let cols = 7;
-    let rows = DAYS_IN_MONTH.div_ceil(7);
-
-    let weekdays = vec!["日", "月", "火", "水", "木", "金", "土"];
-    let mut header = vec![Span::raw("    ")];
-    for day in &weekdays {
-        header.push(Span::raw(format!(" {day} ")));
-    }
-    lines.push(Line::from(header));
-
-    let start_offset = i64::try_from(DAYS_IN_MONTH.saturating_sub(1)).unwrap_or(i64::MAX);
+    let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
     let start_date = today - chrono::Duration::days(start_offset);
 
-    let start_weekday = i64::from(start_date.weekday().num_days_from_sunday());
-    let grid_start = start_date - chrono::Duration::days(start_weekday);
+    let grid_start =
+        start_date - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
+    let days_in_grid = (today - grid_start).num_days() + 1;
+    let week_count = usize::try_from(days_in_grid)
+        .unwrap_or(REPORT_DAYS)
+        .div_ceil(7);
 
-    let days_until_today = (today - grid_start).num_days() + 1;
-    let grid_rows = usize::try_from(days_until_today)
-        .unwrap_or(rows * 7)
-        .div_ceil(7)
-        .min(rows);
+    let week_starts: Vec<NaiveDate> = (0..week_count)
+        .map(|week| {
+            let day_offset = i64::try_from(week.saturating_mul(7)).unwrap_or(i64::MAX);
+            grid_start + chrono::Duration::days(day_offset)
+        })
+        .collect();
 
-    for row in 0..grid_rows {
+    let weekdays = [
+        ("土", 6_u32),
+        ("金", 5_u32),
+        ("木", 4_u32),
+        ("水", 3_u32),
+        ("火", 2_u32),
+        ("月", 1_u32),
+        ("日", 0_u32),
+    ];
+
+    for (weekday_label, weekday_index) in weekdays {
         let mut line_spans = Vec::new();
+        line_spans.push(Span::raw(format!("{weekday_label}{HEATMAP_LABEL_SUFFIX}")));
 
-        let row_start_offset = i64::try_from(row.saturating_mul(7)).unwrap_or(i64::MAX);
-        let row_start_date = grid_start + chrono::Duration::days(row_start_offset);
-        line_spans.push(Span::raw(format!(
-            "週{:02} ",
-            row_start_date.iso_week().week()
-        )));
-
-        for col in 0..cols {
-            let date = row_start_date + chrono::Duration::days(i64::from(col));
-
+        for week_start in &week_starts {
+            let date = *week_start + chrono::Duration::days(i64::from(weekday_index));
             if date < start_date || date > today {
-                line_spans.push(Span::raw("    "));
+                line_spans.push(Span::raw(HEATMAP_EMPTY_CELL));
                 continue;
             }
 
@@ -303,9 +312,12 @@ fn create_heatmap_without_badges(
 
                 let (symbol, style) = get_heatmap_cell_style(total, correct);
 
-                line_spans.push(Span::styled(format!(" {symbol} "), style));
+                line_spans.push(Span::styled(symbol, style));
             } else {
-                line_spans.push(Span::raw(" -- "));
+                line_spans.push(Span::styled(
+                    HEATMAP_CELL,
+                    Style::default().fg(Color::DarkGray),
+                ));
             }
         }
 
@@ -315,17 +327,20 @@ fn create_heatmap_without_badges(
     lines.push(Line::from(""));
     lines.push(Line::from(vec![
         Span::raw("凡例: "),
-        Span::styled("--", Style::default().fg(Color::DarkGray)),
+        Span::styled(HEATMAP_CELL, Style::default().fg(Color::DarkGray)),
         Span::raw(" なし  "),
-        Span::styled("##", Style::default().fg(Color::Red)),
+        Span::styled(HEATMAP_CELL, Style::default().fg(Color::Red)),
         Span::raw(" 全不正解  "),
-        Span::styled("##", Style::default().fg(Color::Yellow)),
+        Span::styled(HEATMAP_CELL, Style::default().fg(Color::Yellow)),
         Span::raw(" 混在  "),
-        Span::styled("##", Style::default().fg(Color::LightGreen)),
+        Span::styled(HEATMAP_CELL, Style::default().fg(Color::LightGreen)),
         Span::raw(" 良  "),
-        Span::styled("##", Style::default().fg(Color::Green)),
+        Span::styled(HEATMAP_CELL, Style::default().fg(Color::Green)),
         Span::raw(" 優  "),
-        Span::styled("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold()),
+        Span::styled(
+            HEATMAP_CELL,
+            Style::default().fg(Color::Rgb(0, 255, 0)).bold(),
+        ),
         Span::raw(" 秀"),
     ]));
 
@@ -385,15 +400,18 @@ fn create_bar_chart_without_badges(
 
 fn get_heatmap_cell_style(total: usize, correct: usize) -> (&'static str, Style) {
     if total == 0 {
-        return ("--", Style::default().fg(Color::DarkGray));
+        return (HEATMAP_CELL, Style::default().fg(Color::DarkGray));
     }
 
     if correct == 0 {
-        return ("##", Style::default().fg(Color::Red));
+        return (HEATMAP_CELL, Style::default().fg(Color::Red));
     }
 
     if correct == total {
-        return ("##", Style::default().fg(Color::Rgb(0, 255, 0)).bold());
+        return (
+            HEATMAP_CELL,
+            Style::default().fg(Color::Rgb(0, 255, 0)).bold(),
+        );
     }
 
     let color = if correct.saturating_mul(10) >= total.saturating_mul(8) {
@@ -404,7 +422,7 @@ fn get_heatmap_cell_style(total: usize, correct: usize) -> (&'static str, Style)
         Color::Yellow
     };
 
-    ("##", Style::default().fg(color))
+    (HEATMAP_CELL, Style::default().fg(color))
 }
 
 fn calculate_bar_height(value: usize, max_value: usize, max_len: usize) -> usize {
@@ -412,4 +430,155 @@ fn calculate_bar_height(value: usize, max_value: usize, max_len: usize) -> usize
         return 0;
     }
     value.saturating_mul(max_len) / max_value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn date(year: i32, month: u32, day: u32) -> Result<NaiveDate, String> {
+        NaiveDate::from_ymd_opt(year, month, day)
+            .ok_or_else(|| format!("invalid test date: {year}-{month}-{day}"))
+    }
+
+    fn text_content(text: Text<'static>) -> Vec<String> {
+        text.lines
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect()
+    }
+
+    fn expected_week_count(today: NaiveDate) -> usize {
+        let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
+        let start_date = today - chrono::Duration::days(start_offset);
+        let grid_start = start_date
+            - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
+        let days_in_grid = (today - grid_start).num_days() + 1;
+
+        usize::try_from(days_in_grid)
+            .unwrap_or(REPORT_DAYS)
+            .div_ceil(7)
+    }
+
+    #[test]
+    fn heatmap_uses_weekdays_as_rows_from_saturday_to_sunday() -> Result<(), String> {
+        let today = date(2026, 7, 2)?;
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+
+        let weekday_rows = lines
+            .get(0..7)
+            .ok_or_else(|| "heatmap did not render all weekday rows".to_string())?;
+        let weekday_labels = weekday_rows
+            .iter()
+            .map(|line| {
+                line.chars()
+                    .next()
+                    .ok_or_else(|| "weekday row was empty".to_string())
+            })
+            .collect::<Result<String, String>>()?;
+
+        if weekday_labels != "土金木水火月日" {
+            return Err(format!("unexpected weekday labels: {weekday_labels}"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn heatmap_uses_unicode_blocks_without_ascii_cell_fallbacks() -> Result<(), String> {
+        let today = date(2026, 7, 2)?;
+        let mut daily_stats = HashMap::new();
+        daily_stats.insert(
+            today,
+            DailyStats {
+                correct: 1,
+                incorrect: 0,
+            },
+        );
+
+        let rendered =
+            text_content(create_heatmap_for_date(&daily_stats, 80, 12, today)).join("\n");
+
+        if !rendered.contains(HEATMAP_CELL) {
+            return Err("heatmap did not contain unicode block cells".to_string());
+        }
+        if rendered.contains("##") {
+            return Err("heatmap contained deprecated ## cells".to_string());
+        }
+        if rendered.contains("--") {
+            return Err("heatmap contained deprecated -- cells".to_string());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn heatmap_uses_compact_week_columns_without_header() -> Result<(), String> {
+        let today = date(2026, 7, 2)?;
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+        let first_line = lines
+            .first()
+            .ok_or_else(|| "heatmap did not render any rows".to_string())?;
+
+        if first_line.starts_with(' ') || first_line.contains("06/03") {
+            return Err(format!(
+                "heatmap rendered an unexpected header: {first_line}"
+            ));
+        }
+
+        let weekday_rows = lines
+            .get(0..7)
+            .ok_or_else(|| "heatmap did not render all weekday rows".to_string())?;
+        for row in weekday_rows {
+            let cells = row
+                .get("土 ".len()..)
+                .ok_or_else(|| format!("row was too short: {row}"))?;
+            let cell_count = cells.chars().count();
+            let expected_cell_count = expected_week_count(today);
+            if cell_count != expected_cell_count {
+                return Err(format!(
+                    "expected {expected_cell_count} week columns, got {cell_count}"
+                ));
+            }
+            if cells.contains(' ') {
+                return Err(format!("heatmap cells were not compact: {row}"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn heatmap_marks_out_of_range_cells_as_empty() -> Result<(), String> {
+        let today = date(2026, 7, 2)?;
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+        let saturday_row = lines
+            .first()
+            .ok_or_else(|| "heatmap did not render saturday row".to_string())?;
+        let friday_row = lines
+            .get(1)
+            .ok_or_else(|| "heatmap did not render friday row".to_string())?;
+        let sunday_row = lines
+            .get(6)
+            .ok_or_else(|| "heatmap did not render sunday row".to_string())?;
+
+        if !saturday_row.ends_with(HEATMAP_EMPTY_CELL) {
+            return Err(format!(
+                "last saturday cell should be out of range: {saturday_row}"
+            ));
+        }
+        if !friday_row.ends_with(HEATMAP_EMPTY_CELL) {
+            return Err(format!(
+                "last friday cell should be out of range: {friday_row}"
+            ));
+        }
+        if !sunday_row.starts_with(&format!("日 {HEATMAP_EMPTY_CELL}")) {
+            return Err(format!(
+                "first sunday cell should be out of range: {sunday_row}"
+            ));
+        }
+        Ok(())
+    }
 }
