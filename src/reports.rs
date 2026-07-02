@@ -7,7 +7,7 @@ use ratatui::{
 };
 use std::collections::HashMap;
 
-const DAYS_IN_MONTH: usize = 30;
+const REPORT_DAYS: usize = 90;
 const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 const HEATMAP_CELL: &str = "■";
@@ -100,11 +100,11 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
 }
 
 fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
-    let summary = stats.get_recent_evaluation_summary(DAYS_IN_MONTH);
+    let summary = stats.get_recent_evaluation_summary(REPORT_DAYS);
     let mut lines = Vec::new();
 
     lines.push(Line::from(Span::styled(
-        "評価スコア (直近30日)",
+        "評価スコア (直近90日)",
         Style::default().fg(Color::Cyan).bold(),
     )));
 
@@ -200,9 +200,9 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         return;
     };
 
-    let daily_stats = stats.get_daily_stats(DAYS_IN_MONTH);
+    let daily_stats = stats.get_daily_stats(REPORT_DAYS);
     let monthly_block = Block::default()
-        .title("月次 (過去30日)")
+        .title("90日 (過去90日)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(*monthly_area);
@@ -268,14 +268,14 @@ fn create_heatmap_for_date(
 ) -> Text<'static> {
     let mut lines = Vec::new();
 
-    let start_offset = i64::try_from(DAYS_IN_MONTH.saturating_sub(1)).unwrap_or(i64::MAX);
+    let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
     let start_date = today - chrono::Duration::days(start_offset);
 
     let grid_start =
         start_date - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
     let days_in_grid = (today - grid_start).num_days() + 1;
     let week_count = usize::try_from(days_in_grid)
-        .unwrap_or(DAYS_IN_MONTH)
+        .unwrap_or(REPORT_DAYS)
         .div_ceil(7);
 
     let week_starts: Vec<NaiveDate> = (0..week_count)
@@ -453,6 +453,18 @@ mod tests {
             .collect()
     }
 
+    fn expected_week_count(today: NaiveDate) -> usize {
+        let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
+        let start_date = today - chrono::Duration::days(start_offset);
+        let grid_start = start_date
+            - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
+        let days_in_grid = (today - grid_start).num_days() + 1;
+
+        usize::try_from(days_in_grid)
+            .unwrap_or(REPORT_DAYS)
+            .div_ceil(7)
+    }
+
     #[test]
     fn heatmap_uses_weekdays_as_rows_from_saturday_to_sunday() -> Result<(), String> {
         let today = date(2026, 7, 2)?;
@@ -525,8 +537,11 @@ mod tests {
                 .get("土 ".len()..)
                 .ok_or_else(|| format!("row was too short: {row}"))?;
             let cell_count = cells.chars().count();
-            if cell_count != 5 {
-                return Err(format!("expected 5 week columns, got {cell_count}"));
+            let expected_cell_count = expected_week_count(today);
+            if cell_count != expected_cell_count {
+                return Err(format!(
+                    "expected {expected_cell_count} week columns, got {cell_count}"
+                ));
             }
             if cells.contains(' ') {
                 return Err(format!("heatmap cells were not compact: {row}"));

@@ -316,12 +316,12 @@ pub struct EvaluationScores {
 
 **評価スコア集計**:
 
-- 直近30日の `EvaluationScores` を集計して平均・中央値・件数を表示する
+- 直近90日の `EvaluationScores` を集計して平均・中央値・件数を表示する
 
 **月次ヒートマップ**:
 
-- 入力データは `TrainingStats::get_daily_stats(30)` の戻り値を使用する
-- 対象期間は今日を含む直近30日とする
+- 入力データは `TrainingStats::get_daily_stats(90)` の戻り値を使用する
+- 対象期間は今日を含む直近90日とする
 - 横軸は週とし、左から古い週、右へ行くほど新しい週とする
 - 週列は日曜始まりとして扱い、対象期間内に含まれる週を表示する
 - 各セルは、週列と曜日行の交点にある1日を表す
@@ -360,7 +360,7 @@ pub struct EvaluationScores {
 - 評価結果パースは8行必須・順序自由で解釈し、数値は 1〜5 のみ許可、壊れた形式は Err とする
 - 評価結果の表示は固定順とし、数値は 1〜5 をそのまま表示する
 - パース失敗時は「評価結果の形式が不正です」と表示する
-- レポートは直近30日の平均・中央値・件数を表示する
+- レポートは直近90日の平均・中央値・件数を表示する
 - 月次ヒートマップは週横軸、曜日縦軸、Unicode block セルで表示する
 - 評価結果の余分な行は無視し、先頭の箇条書き記号が異なっていても解釈する
 
@@ -567,7 +567,7 @@ const MAX_CONSECUTIVE_STREAK: usize = 50;
 const MAX_CUMULATIVE_MILESTONE: usize = 100;
 
 // reports.rs
-const DAYS_IN_MONTH: usize = 30;
+const REPORT_DAYS: usize = 90;
 const WEEKS_TO_SHOW: usize = 4;
 const MAX_BADGES_DISPLAY: usize = 20;
 ```
