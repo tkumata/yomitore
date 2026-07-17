@@ -13,14 +13,13 @@ mod tui;
 mod ui;
 
 use crate::{
-    api_client::{ApiClient, ApiClientLike},
+    api_client::ApiClient,
     app::App,
     error::AppError,
     evaluation::{OverallEvaluation, format_evaluation_display, parse_evaluation},
     events::AppAction,
     models::EvaluationScores,
 };
-use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -31,7 +30,7 @@ async fn main() -> Result<(), AppError> {
 
     let mut tui = tui::init()?;
 
-    while !app.flags.interaction.should_quit {
+    while !app.should_quit {
         tui.draw(|frame| ui::render(&mut app, frame))?;
 
         if let Some(action) = events::handle_events(&mut app)? {
@@ -49,7 +48,7 @@ async fn main() -> Result<(), AppError> {
 
 async fn generate_text_for_training(app: &mut App) {
     if let Some(client) = &app.api_client {
-        match client.generate_text(app.generate_text_prompt()).await {
+        match client.generate_text(&app.generate_text_prompt()).await {
             Ok(text) => app.apply_generated_text(text),
             Err(e) => app.apply_generation_error(&e),
         }
@@ -74,10 +73,7 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
 
     let summary = app.text_area_state.value().clone();
 
-    match client
-        .evaluate_summary(app.original_text.clone(), summary)
-        .await
-    {
+    match client.evaluate_summary(&app.original_text, &summary).await {
         Ok(evaluation) => match parse_evaluation(&evaluation) {
             Ok(parsed) => {
                 let evaluation_passed = matches!(parsed.overall, OverallEvaluation::Pass);
@@ -117,18 +113,11 @@ async fn handle_next_training(app: &mut App, tui: &mut tui::Tui) -> Result<(), A
     Ok(())
 }
 
-async fn authenticate() -> Result<Box<dyn ApiClientLike>, AppError> {
+async fn authenticate() -> Result<ApiClient, AppError> {
     if let Some(key) = config::load_api_key()?
         && let Some(client) = authenticate_with_key(&key).await
     {
-        return Ok(Box::new(client));
-    }
-
-    if let Ok(key) = env::var("GROQ_API_KEY")
-        && let Some(client) = authenticate_with_key(&key).await
-    {
-        let _ = config::save_api_key(&key);
-        return Ok(Box::new(client));
+        return Ok(client);
     }
     Err(AppError::InvalidApiKey)
 }

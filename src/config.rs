@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Default)]
@@ -17,33 +17,6 @@ fn get_config_path() -> Result<PathBuf, AppError> {
     let app_config_dir = config_dir.join("yomitore");
     fs::create_dir_all(&app_config_dir)?;
     Ok(app_config_dir.join("config.toml"))
-}
-
-pub fn save_api_key(api_key: &str) -> Result<(), AppError> {
-    let config_path = get_config_path()?;
-    let config = Config {
-        api_key: Some(api_key.to_string()),
-    };
-    let toml_string = toml::to_string(&config).map_err(|_| {
-        AppError::IoError(std::io::Error::other("設定のシリアライズに失敗しました。"))
-    })?;
-
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(&config_path)?;
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = file.metadata()?.permissions();
-        perms.set_mode(0o600);
-        file.set_permissions(perms)?;
-    }
-
-    file.write_all(toml_string.as_bytes())?;
-    Ok(())
 }
 
 pub fn load_api_key() -> Result<Option<String>, AppError> {
@@ -119,50 +92,5 @@ mod tests {
                 env::remove_var(env_var_name);
             }
         }
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_save_api_key_permissions() {
-        use std::os::unix::fs::PermissionsExt;
-        let config_path = std::env::temp_dir().join(format!(
-            "yomitore-test-config-{}-{}.toml",
-            std::process::id(),
-            chrono::Local::now()
-                .timestamp_nanos_opt()
-                .unwrap_or_default()
-        ));
-
-        // We can't easily mock get_config_path, but we can test the serialization and permission logic
-        let api_key = "test_perm_key";
-        let config = Config {
-            api_key: Some(api_key.to_string()),
-        };
-        let toml_string = toml::to_string(&config).unwrap_or_default();
-
-        let open_result = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&config_path);
-        assert!(open_result.is_ok());
-        let Ok(mut file) = open_result else { return };
-        let metadata_result = file.metadata();
-        assert!(metadata_result.is_ok());
-        let mut perms = match metadata_result {
-            Ok(metadata) => metadata.permissions(),
-            Err(_) => return,
-        };
-        perms.set_mode(0o600);
-        assert!(file.set_permissions(perms).is_ok());
-        assert!(file.write_all(toml_string.as_bytes()).is_ok());
-
-        let metadata_result = fs::metadata(&config_path);
-        assert!(metadata_result.is_ok());
-        let Ok(metadata) = metadata_result else {
-            return;
-        };
-        assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
-        let _ = fs::remove_file(&config_path);
     }
 }

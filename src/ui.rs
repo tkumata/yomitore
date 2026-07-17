@@ -66,13 +66,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_original_text(app, frame, *original_area);
     render_summary_input(app, frame, *summary_area);
 
-    if app.flags.evaluation.show_evaluation_overlay {
+    if app.show_evaluation_overlay {
         render_evaluation_overlay(app, frame);
     }
 
     render_status_bar(app, frame, *status_area);
 
-    if app.flags.interaction.is_editing
+    if app.text_area_state.focus.get()
         && let Some((cx, cy)) = app.text_area_state.screen_cursor()
     {
         frame.set_cursor_position((cx, cy));
@@ -103,7 +103,7 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
 
     clamp_textarea_scroll(&mut app.text_area_state);
 
-    let border_style = if app.flags.interaction.is_editing {
+    let border_style = if app.text_area_state.focus.get() {
         Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::Blue)
@@ -189,7 +189,7 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     let black_background = Paragraph::new("").style(Style::default().bg(Color::Black));
     frame.render_widget(black_background, overlay_area);
 
-    let border_color = if app.flags.evaluation.evaluation_passed {
+    let border_color = if app.evaluation_passed {
         Color::Green
     } else {
         Color::Red
@@ -322,11 +322,11 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     };
     render_header(frame, *header_area);
 
-    let help_content = help::get_help_content();
+    let help_content = help::HELP_CONTENT;
     let help_text = if help_content.is_empty() {
-        "ヘルプファイルが見つかりません。\n\ndocs/HELP.md を作成してください。".to_string()
+        "ヘルプファイルが見つかりません。\n\ndocs/HELP.md を作成してください。"
     } else {
-        help_content.to_string()
+        help_content
     };
 
     let block = Block::default()
@@ -388,28 +388,13 @@ fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
 }
 
 #[cfg(test)]
-fn calculate_overlay_area(full_area: Rect) -> Rect {
-    let overlay = App::calculate_overlay_area_for_size(full_area.width, full_area.height);
-
-    let x = full_area.x.saturating_add(overlay.x);
-    let y = full_area.y.saturating_add(overlay.y);
-
-    Rect {
-        x,
-        y,
-        width: overlay.width,
-        height: overlay.height,
-    }
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_calculate_overlay_area_standard() {
         let full_area = Rect::new(0, 0, 100, 40);
-        let overlay = calculate_overlay_area(full_area);
+        let overlay = App::calculate_overlay_area_for_size(full_area.width, full_area.height);
 
         assert_eq!(overlay.width, 75);
         assert_eq!(overlay.height, 30);
@@ -420,7 +405,7 @@ mod tests {
     #[test]
     fn test_calculate_overlay_area_min_size_constraint() {
         let full_area = Rect::new(0, 0, 40, 10);
-        let overlay = calculate_overlay_area(full_area);
+        let overlay = App::calculate_overlay_area_for_size(full_area.width, full_area.height);
 
         assert_eq!(overlay.width, 36);
         assert_eq!(overlay.height, 6);
@@ -429,7 +414,7 @@ mod tests {
     #[test]
     fn test_calculate_overlay_area_margins_preserved() {
         let full_area = Rect::new(0, 0, 100, 40);
-        let overlay = calculate_overlay_area(full_area);
+        let overlay = App::calculate_overlay_area_for_size(full_area.width, full_area.height);
 
         assert!(overlay.x >= OVERLAY_MARGIN);
         assert!(overlay.y >= OVERLAY_MARGIN);

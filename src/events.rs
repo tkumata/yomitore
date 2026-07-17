@@ -34,7 +34,7 @@ pub fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                     return Ok(None);
                 }
                 ViewMode::Normal => {
-                    if app.flags.interaction.is_editing {
+                    if app.text_area_state.focus.get() {
                         return Ok(handle_editing_events(app, &ev, key));
                     }
                     return Ok(handle_normal_mode_events(app, key));
@@ -76,7 +76,7 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
             app.enter_help_view();
         }
         KeyCode::Char('q') => {
-            app.flags.interaction.should_quit = true;
+            app.should_quit = true;
         }
         _ => {}
     }
@@ -103,7 +103,7 @@ fn handle_report_events(app: &mut App, key: event::KeyEvent) {
             app.return_from_aux_view();
         }
         KeyCode::Char('q') => {
-            app.flags.interaction.should_quit = true;
+            app.should_quit = true;
         }
         _ => {}
     }
@@ -122,7 +122,7 @@ fn handle_help_events(app: &mut App, key: event::KeyEvent) {
             app.help_scroll = app.help_scroll.saturating_sub(1);
         }
         KeyCode::Char('q') => {
-            app.flags.interaction.should_quit = true;
+            app.should_quit = true;
         }
         _ => {}
     }
@@ -131,22 +131,21 @@ fn handle_help_events(app: &mut App, key: event::KeyEvent) {
 fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
     match key.code {
         KeyCode::Char('i') | KeyCode::Enter => {
-            if !app.flags.evaluation.show_evaluation_overlay {
+            if !app.show_evaluation_overlay {
                 app.begin_editing();
             }
         }
         KeyCode::Char('e') => {
             if !app.evaluation_text.is_empty() {
-                app.flags.evaluation.show_evaluation_overlay =
-                    !app.flags.evaluation.show_evaluation_overlay;
-                if app.flags.evaluation.show_evaluation_overlay {
+                app.show_evaluation_overlay = !app.show_evaluation_overlay;
+                if app.show_evaluation_overlay {
                     app.evaluation_overlay_scroll = 0;
                 }
             }
         }
         KeyCode::Char('n') => {
-            if app.flags.evaluation.show_evaluation_overlay {
-                app.flags.evaluation.show_evaluation_overlay = false;
+            if app.show_evaluation_overlay {
+                app.show_evaluation_overlay = false;
                 return Some(AppAction::NextTraining);
             }
         }
@@ -157,12 +156,10 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             app.enter_help_view();
         }
         KeyCode::Char('q') => {
-            app.flags.interaction.should_quit = true;
+            app.should_quit = true;
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.flags.evaluation.show_evaluation_overlay
-                && key.modifiers.contains(KeyModifiers::SHIFT)
-            {
+            if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
                 let (visible_height, visible_width) = app.evaluation_viewport_size();
                 let max_scroll =
                     calculate_max_scroll(&app.evaluation_text, visible_height, visible_width);
@@ -179,9 +176,7 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
-            if app.flags.evaluation.show_evaluation_overlay
-                && key.modifiers.contains(KeyModifiers::SHIFT)
-            {
+            if app.show_evaluation_overlay && key.modifiers.contains(KeyModifiers::SHIFT) {
                 app.evaluation_overlay_scroll = app.evaluation_overlay_scroll.saturating_sub(1);
             } else {
                 app.original_text_scroll = app.original_text_scroll.saturating_sub(1);

@@ -1,4 +1,4 @@
-use crate::api_client::ApiClientLike;
+use crate::api_client::ApiClient;
 use crate::stats::TrainingStats;
 use rand::RngExt;
 use rat_text::text_area::{TextAreaState, TextWrap};
@@ -36,27 +36,8 @@ pub const STATUS_EVALUATED: &str = "評価が完了しました。'e' で切替�
 pub const STATUS_INVALID_EVALUATION: &str = "評価結果の形式が不正です。";
 pub const STATUS_RUNTIME_ERROR: &str = "エラーが発生しました。";
 
-#[derive(Default)]
-pub struct InteractionFlags {
-    pub is_editing: bool,
-    pub should_quit: bool,
-}
-
-#[derive(Default)]
-pub struct EvaluationFlags {
-    pub evaluation_passed: bool,
-    pub is_evaluating: bool,
-    pub show_evaluation_overlay: bool,
-}
-
-#[derive(Default)]
-pub struct AppFlags {
-    pub interaction: InteractionFlags,
-    pub evaluation: EvaluationFlags,
-}
-
 pub struct App {
-    pub api_client: Option<Box<dyn ApiClientLike>>,
+    pub api_client: Option<ApiClient>,
     pub original_text: String,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
@@ -68,14 +49,16 @@ pub struct App {
     pub character_count: u16,
     pub selected_menu_item: usize,
     pub help_scroll: u16,
-    pub flags: AppFlags,
+    pub should_quit: bool,
+    pub evaluation_passed: bool,
+    pub show_evaluation_overlay: bool,
     pub terminal_width: u16,
     pub terminal_height: u16,
 }
 
 impl Default for App {
     fn default() -> Self {
-        let stats = TrainingStats::load().unwrap_or_else(|_| TrainingStats::new());
+        let stats = TrainingStats::load().unwrap_or_default();
 
         let text_area_state = Self::new_text_area_state();
 
@@ -92,7 +75,9 @@ impl Default for App {
             character_count: 400,
             selected_menu_item: 0,
             help_scroll: 0,
-            flags: AppFlags::default(),
+            should_quit: false,
+            evaluation_passed: false,
+            show_evaluation_overlay: false,
             terminal_width: 100,
             terminal_height: 30,
         }
@@ -148,14 +133,12 @@ impl App {
     }
 
     pub fn begin_editing(&mut self) {
-        self.flags.interaction.is_editing = true;
         self.text_area_state.focus.set(true);
         self.text_area_state.scroll_cursor_to_visible();
         self.status_message = STATUS_EDITING.to_string();
     }
 
     pub fn stop_editing(&mut self) {
-        self.flags.interaction.is_editing = false;
         self.text_area_state.focus.set(false);
         self.status_message = STATUS_NORMAL.to_string();
     }
@@ -181,41 +164,37 @@ impl App {
     }
 
     pub fn begin_evaluation(&mut self) {
-        self.flags.evaluation.is_evaluating = true;
         self.status_message = STATUS_EVALUATING.to_string();
     }
 
     pub fn finish_evaluation(&mut self, text: String, passed: bool) {
         self.evaluation_text = text;
-        self.flags.evaluation.evaluation_passed = passed;
-        self.flags.evaluation.show_evaluation_overlay = true;
+        self.evaluation_passed = passed;
+        self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
-        self.flags.evaluation.is_evaluating = false;
         self.status_message = STATUS_EVALUATED.to_string();
     }
 
     pub fn fail_evaluation_format(&mut self) {
         self.evaluation_text = STATUS_INVALID_EVALUATION.to_string();
-        self.flags.evaluation.evaluation_passed = false;
-        self.flags.evaluation.show_evaluation_overlay = true;
+        self.evaluation_passed = false;
+        self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
-        self.flags.evaluation.is_evaluating = false;
         self.status_message = STATUS_INVALID_EVALUATION.to_string();
     }
 
     pub fn fail_evaluation_request(&mut self, error: &impl std::fmt::Display) {
         self.evaluation_text = format!("エラー: {error}");
-        self.flags.evaluation.evaluation_passed = false;
-        self.flags.evaluation.show_evaluation_overlay = true;
+        self.evaluation_passed = false;
+        self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
-        self.flags.evaluation.is_evaluating = false;
         self.status_message = STATUS_RUNTIME_ERROR.to_string();
     }
 
     pub fn prepare_next_training(&mut self) {
-        self.flags.evaluation.show_evaluation_overlay = false;
+        self.show_evaluation_overlay = false;
         self.evaluation_text.clear();
-        self.flags.evaluation.evaluation_passed = false;
+        self.evaluation_passed = false;
         self.text_area_state = Self::new_text_area_state();
         self.original_text_scroll = 0;
         self.evaluation_overlay_scroll = 0;

@@ -40,14 +40,10 @@ pub struct TrainingStats {
 }
 
 impl TrainingStats {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         let path = Self::get_stats_file_path()?;
         if !path.exists() {
-            return Ok(Self::new());
+            return Ok(Self::default());
         }
         let content = fs::read_to_string(&path)?;
         let mut stats: TrainingStats = serde_json::from_str(&content)?;
@@ -215,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_badge_awarding_consecutive() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
 
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
@@ -236,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_streak_reset_on_incorrect() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
 
         for _ in 0..5 {
             stats.add_result_with_evaluation(true, None);
@@ -254,7 +250,7 @@ mod tests {
 
     #[test]
     fn test_rebuild_badges_from_history() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
 
         for _ in 0..10 {
             stats.add_result_with_evaluation(true, None);
@@ -272,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_calculate_daily_stats() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
         let today = Local::now().date_naive();
 
         stats.results.push(TrainingResult {
@@ -310,7 +306,7 @@ mod tests {
 
     #[test]
     fn test_calculate_weekly_stats() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
         let now = Local::now();
 
         stats.results.push(TrainingResult {
@@ -355,7 +351,7 @@ mod tests {
 
     #[test]
     fn test_recent_evaluation_summary() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
         let now = Local::now();
 
         stats.results.push(TrainingResult {
@@ -423,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_recalculate_streak_variations() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
 
         stats.recalculate_streak();
         assert_eq!(stats.current_streak, 0);
@@ -469,7 +465,7 @@ mod tests {
 
     #[test]
     fn test_buddy_growth() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
         assert_eq!(stats.buddy.level, 1);
         assert_eq!(stats.buddy.exp, 0);
 
@@ -501,7 +497,7 @@ mod tests {
 
     #[test]
     fn test_buddy_penalty() {
-        let mut stats = TrainingStats::new();
+        let mut stats = TrainingStats::default();
         stats.buddy.level = 2;
         stats.buddy.exp = 3;
         stats.last_training_date = Some(Local::now() - chrono::Duration::days(3));

@@ -1,12 +1,13 @@
 # 技術仕様書: 読解力トレーニング CLI (yomitore)
 
-**バージョン**: 0.1.10
-**最終更新日**: 2026-01-19
+**バージョン**: 0.1.14
+**最終更新日**: 2026-07-17
 
 ## 改訂履歴
 
 | Version | Date        | Change Log                                                       |
 | ------- | ----------- | ---------------------------------------------------------------- |
+| 0.1.14  | 2026-07-17  | Simplify internal structure and remove unused components         |
 | 0.1.10  | 2026-01-19  | Update prompt strategy (Prompt Repetition), evaluation logic fix |
 | 0.1.9   | 2025-12-06  | API timeout, Define const, Improving error handling              |
 | 0.1.0   | 1st Release | 1st Release                                                      |
@@ -24,7 +25,7 @@
 - **`api_client.rs`**: Groq API との HTTP 通信を管理。タイムアウト設定、リクエスト/レスポンス処理
 - **`ui.rs`**: ratatui を使用した TUI レンダリング。メニュー、トレーニング画面、レポート、ヘルプの描画
 - **`tui.rs`**: ターミナル初期化・終了処理。ターミナルサイズチェック
-- **`config.rs`**: 設定ファイルの読み書き。API キーの永続化
+- **`config.rs`**: 環境変数または設定ファイルから API キーを読み込む
 - **`stats.rs`**: トレーニング統計の管理。バッジシステム、日次/週次集計
 - **`reports.rs`**: レポート画面のレンダリング。統計の可視化
 - **`help.rs`**: ヘルプコンテンツの管理
@@ -71,19 +72,16 @@
 
 **実装関数**: `authenticate() -> Result<ApiClient, AppError>`
 
-1. **設定ファイルからの読み込み**:
-   - `config::load_api_key()` で TOML 形式の設定ファイルを読み込む
+1. **API キーの読み込み**:
+   - `config::load_api_key()` で環境変数を優先し、未設定時は TOML 形式の設定ファイルを読み込む
    - パス:
      - Linux: `~/.config/yomitore/config.toml`
      - macOS: `~/Library/Application Support/yomitore/config.toml`
      - Windows: `%APPDATA%/yomitore/config.toml`
-2. **環境変数からの読み込み**:
-   - `env::var("GROQ_API_KEY")` で環境変数を確認
-3. **認証検証**:
+2. **認証検証**:
    - **エンドポイント**: `GET https://api.groq.com/openai/v1/models`
    - **タイムアウト**: 60 秒
    - **処理**: `ApiClient::validate_credentials()` で認証チェック
-   - **成功**: API キーを設定ファイルに保存（Unix 系では 600 パーミッション）
    - **失敗**: `AppError::InvalidApiKey` を返す
 
 ### 3.2. 文章生成機能 (api_client.rs)
@@ -131,7 +129,7 @@
 
 - **イベントポーリング**: `event::poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))`
   - `EVENT_POLL_INTERVAL_MS = 100` (定数化)
-- **モード管理**: `App::is_editing` フラグで入力モードを管理
+- **モード管理**: `TextAreaState::focus` で入力モードを管理
 - **テキストエリア**: `rat-text::TextAreaState` を使用
   - ワードラップ対応（`TextWrap::Word(10)`）
   - カーソル位置管理
@@ -348,13 +346,13 @@ pub struct EvaluationScores {
   - 存在しない場合は新規作成
   - 読み込み後、`recalculate_streak()`と`rebuild_badges_from_history()`を実行
 
-### 3.8. テスト戦略 (api_client.rs, app.rs)
+### 3.8. テスト戦略 (evaluation.rs)
 
-**目的**: 実際の GroqCloud API を利用せずに、評価結果の判定までを自動テストする。
+**目的**: 実際の GroqCloud API を利用せずに、評価結果の解析と合否判定を自動テストする。
 
 **方針**:
 
-- `ApiClient` をトレイト化し、本番実装とテスト実装を差し替え可能にする
+- `ApiClient` は単一の具象型として使用する
 - 評価結果のパースと合否判定は純粋関数として切り出し、ユニットテスト対象とする
 - テストはモジュール名で絞り込み実行できる構成にする
 - 評価結果パースは8行必須・順序自由で解釈し、数値は 1〜5 のみ許可、壊れた形式は Err とする
@@ -450,7 +448,6 @@ pub enum ViewMode {
 
 pub struct App {
     pub api_client: Option<ApiClient>,
-    pub is_editing: bool,
     pub original_text: String,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
@@ -458,7 +455,6 @@ pub struct App {
     pub status_message: String,
     pub should_quit: bool,
     pub text_area_state: TextAreaState,
-    pub is_evaluating: bool,
     pub show_evaluation_overlay: bool,
     pub evaluation_overlay_scroll: u16,
     pub view_mode: ViewMode,
@@ -655,7 +651,7 @@ cargo clippy --all-targets --all-features
 ## 10. セキュリティ考慮事項
 
 1. **API キー保護**:
-   - ファイルパーミッション 600（Unix 系）
+   - Unix 系で設定ファイルを使用する場合、利用者がファイルパーミッションを 600 に設定する
 2. **入力検証**:
    - API 応答の`content`フィールドが null の場合を考慮
    - ファイル I/O 時の適切なエラーハンドリング
