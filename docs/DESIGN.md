@@ -24,8 +24,7 @@
 
 ## テスト導入
 
-- `ApiClient` の実装をトレイトで抽象化し、本番実装とテスト実装を差し替え可能にする
-- テスト実装は固定の評価結果文字列を返す（合格/不合格/壊れた形式）
+- `ApiClient` は単一の具象型として `App` が直接保持する
 - 評価結果のパースと合否判定は純粋関数として分離し、ユニットテストで検証する
 - テストはモジュール名ベースで絞り込み実行できる構成にする
 - 評価結果パースは8行必須・順序自由で解釈し、数値は 1〜5 のみ許可、壊れた形式は Err とする
@@ -36,19 +35,16 @@
 ## AI エージェントハーネスのレビューゲート
 
 - `check` と `build` は通過条件であり、完了条件ではない
-- `build` 成功後は `review_pending` に遷移し、`review_pipeline.sh` を手動実行して完了可否を確定する
-- `review_pending` の間は `Stop` / `agentStop` を完了扱いにせず、レビュー要求として継続応答する
-- レビューで指摘が残る場合は `review_pending` に留め、修正後に再レビューする
-- `review_pipeline.sh` 承認時に作業ツリーのスナップショットを保存し、`done` の後にその差分が変わった場合だけ次の `Stop` で `check_pending` に戻して再点火する
+- Rust 関連差分のフィンガープリントを保存し、同一差分の検証を繰り返さない
+- 未検証差分では `make check`、次の Stop で `make build` の順に実行する
+- `build` 成功後はコードレビューを要求し、Rust 関連差分が変わった場合だけ再検証する
 
 ```mermaid
 stateDiagram-v2
   [*] --> check_pending
   check_pending --> build_pending: make check passed
-  build_pending --> review_pending: make build passed
-  review_pending --> done: review_pipeline.sh approved
-  done --> check_pending: worktree signature changed
-  review_pending --> review_pending: Findings remain
+  build_pending --> done: make build passed and review requested
+  done --> check_pending: Rust fingerprint changed
 ```
 
 ## レポートヒートマップ改善
