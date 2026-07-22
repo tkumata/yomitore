@@ -2,9 +2,11 @@
 set -euo pipefail
 
 AGENT="${1:-codex}"
-STATE_FILE=".agent-hooks/state/pipeline_state"
-LOG_DIR=".agent-hooks/state/logs"
-REVIEW_INSTRUCTION="Full Rust verification passed. Before stopping, review the current uncommitted changes for correctness, regressions, security, test coverage, and documentation consistency. Fix every actionable finding within the requested scope. If you change Rust-related files, finish the fixes and let the Stop hook rerun verification before claiming completion. If there are no findings, report that explicitly and stop."
+
+STATE_DIR=".agent-hooks/state"
+STATE_FILE="${STATE_DIR}/pipeline_state"
+LOG_DIR="${STATE_DIR}/logs"
+REVIEW_INSTRUCTION="Full Rust verification passed. Before stopping, review only the current uncommitted Rust-related changes (*.rs, Cargo.toml, Cargo.lock, build.rs, rust-toolchain, rust-toolchain.toml, and .cargo/**) for correctness, regressions, security, and test coverage. Do not review unrelated changes, including Markdown files. Fix every actionable finding within the requested scope. If you change Rust-related files, finish the fixes and let the Stop hook rerun verification before claiming completion. If there are no findings, report that explicitly and stop."
 RUST_PATHS=(
   ':(glob)*.rs'
   ':(glob)**/*.rs'
@@ -18,8 +20,28 @@ RUST_PATHS=(
 
 mkdir -p "${LOG_DIR}"
 
+PHASE="idle"
+CHECK_FINGERPRINT=""
+VALIDATED_FINGERPRINT=""
+
+load_state() {
+  [ -f "${STATE_FILE}" ] || return 0
+
+  while IFS='=' read -r key value; do
+    case "${key}" in
+      phase) PHASE="${value}" ;;
+      check_fingerprint) CHECK_FINGERPRINT="${value}" ;;
+      validated_fingerprint) VALIDATED_FINGERPRINT="${value}" ;;
+    esac
+  done < "${STATE_FILE}"
+}
+
 save_state() {
-  printf '%s %s\n' "$1" "${2:-}" > "${STATE_FILE}"
+  {
+    printf 'phase=%s\n' "${PHASE}"
+    printf 'check_fingerprint=%s\n' "${CHECK_FINGERPRINT}"
+    printf 'validated_fingerprint=%s\n' "${VALIDATED_FINGERPRINT}"
+  } > "${STATE_FILE}"
 }
 
 has_rust_changes() {
@@ -41,75 +63,87 @@ rust_fingerprint() {
 run_and_log() {
   local name="$1"
   local cmd="$2"
+  local log="${LOG_DIR}/${name}.log"
 
   {
     echo "\$ ${cmd}"
     echo
     bash -lc "${cmd}"
-  } >"${LOG_DIR}/${name}.log" 2>&1
+  } >"${log}" 2>&1
 }
 
 emit_continue() {
   local reason="$1"
 
-  if [ "${AGENT}" = "copilot" ]; then
-    jq -nc --arg reason "${reason}" '{continue:false, message:$reason}'
-  else
-    jq -nc --arg reason "${reason}" '{decision:"block", reason:$reason}'
-  fi
+  case "${AGENT}" in
+    codex)
+      jq -nc --arg reason "${reason}" \
+        '{decision:"block", reason:$reason}'
+      ;;
+    copilot)
+      jq -nc --arg reason "${reason}" \
+        '{continue:false, message:$reason}'
+      ;;
+    *)
+      jq -nc --arg reason "${reason}" \
+        '{decision:"block", reason:$reason}'
+      ;;
+  esac
 }
 
-emit_stop() {
-  local message="$1"
-
-  if [ "${AGENT}" = "copilot" ]; then
-    jq -nc --arg message "${message}" '{continue:true, message:$message}'
-  else
-    jq -nc --arg message "${message}" \
-      '{continue:false, stopReason:$message, systemMessage:$message}'
-  fi
-}
-
-STATE="idle"
-STORED_FINGERPRINT=""
-if [ -f "${STATE_FILE}" ]; then
-  read -r STATE STORED_FINGERPRINT < "${STATE_FILE}" || true
-fi
+load_state
 
 if ! has_rust_changes; then
-  save_state idle
-  emit_stop "No Rust-related changes require validation."
+  PHASE="idle"
+  CHECK_FINGERPRINT=""
+  save_state
   exit 0
 fi
 
 FINGERPRINT="$(rust_fingerprint)"
 
-if [ "${STATE}" = "done" ] && [ "${STORED_FINGERPRINT}" = "${FINGERPRINT}" ]; then
-  emit_stop "Validation and code review request already completed for the current Rust changes."
+if [ "${FINGERPRINT}" = "${VALIDATED_FINGERPRINT}" ]; then
+  PHASE="done"
+  CHECK_FINGERPRINT=""
+  save_state
   exit 0
 fi
 
-if [ "${STATE}" = "checked" ] && [ "${STORED_FINGERPRINT}" = "${FINGERPRINT}" ]; then
-  if ! run_and_log build "make build"; then
-    emit_continue "make build failed. Fix the root cause and review .agent-hooks/state/logs/build.log."
-    exit 0
-  fi
+if [ "${PHASE}" = "build_pending" ] && [ "${FINGERPRINT}" != "${CHECK_FINGERPRINT}" ]; then
+  PHASE="check_pending"
+  CHECK_FINGERPRINT=""
+fi
 
-  if [ "$(rust_fingerprint)" != "${FINGERPRINT}" ]; then
-    save_state idle
+if [ "${PHASE}" != "build_pending" ]; then
+  if run_and_log "check" "make check"; then
+    PHASE="build_pending"
+    CHECK_FINGERPRINT="${FINGERPRINT}"
+    save_state
+    emit_continue "make check passed. Next run make build if Rust-related changes remain unchanged."
+  else
+    PHASE="check_pending"
+    CHECK_FINGERPRINT=""
+    save_state
+    emit_continue "make check failed. Fix the root cause and review .agent-hooks/state/logs/check.log."
+  fi
+  exit 0
+fi
+
+if run_and_log "build" "make build"; then
+  if [ "$(rust_fingerprint)" = "${CHECK_FINGERPRINT}" ]; then
+    PHASE="done"
+    VALIDATED_FINGERPRINT="${CHECK_FINGERPRINT}"
+    CHECK_FINGERPRINT=""
+    save_state
+    emit_continue "${REVIEW_INSTRUCTION}"
+  else
+    PHASE="check_pending"
+    CHECK_FINGERPRINT=""
+    save_state
     emit_continue "Rust-related changes changed during build. Run make check again."
-    exit 0
   fi
-
-  save_state done "${FINGERPRINT}"
-  emit_continue "${REVIEW_INSTRUCTION}"
-  exit 0
-fi
-
-if run_and_log check "make check"; then
-  save_state checked "${FINGERPRINT}"
-  emit_continue "make check passed. Next run make build if Rust-related changes remain unchanged."
 else
-  save_state idle
-  emit_continue "make check failed. Fix the root cause and review .agent-hooks/state/logs/check.log."
+  PHASE="build_pending"
+  save_state
+  emit_continue "make build failed. Fix the root cause and review .agent-hooks/state/logs/build.log."
 fi
