@@ -10,6 +10,37 @@ pub enum ViewMode {
     Normal,
     Report,
     Help,
+    Settings,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum SettingsField {
+    Groq,
+    Jev,
+}
+
+pub struct SettingsState {
+    pub field: SettingsField,
+    pub groq_input: String,
+    pub jev_input: String,
+    pub groq_from_env: bool,
+    pub groq_saved: bool,
+    pub jev_saved: bool,
+    return_mode: ViewMode,
+}
+
+impl Default for SettingsState {
+    fn default() -> Self {
+        Self {
+            field: SettingsField::Groq,
+            groq_input: String::new(),
+            jev_input: String::new(),
+            groq_from_env: false,
+            groq_saved: false,
+            jev_saved: false,
+            return_mode: ViewMode::Menu,
+        }
+    }
 }
 
 pub const MENU_OPTIONS: [u16; 4] = [400, 720, 1440, 2880];
@@ -38,6 +69,7 @@ pub const STATUS_RUNTIME_ERROR: &str = "エラーが発生しました。";
 
 pub struct App {
     pub api_client: Option<ApiClient>,
+    pub jev_api_client: Option<ApiClient>,
     pub original_text: String,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
@@ -54,6 +86,7 @@ pub struct App {
     pub show_evaluation_overlay: bool,
     pub terminal_width: u16,
     pub terminal_height: u16,
+    pub settings: SettingsState,
 }
 
 impl Default for App {
@@ -64,6 +97,7 @@ impl Default for App {
 
         Self {
             api_client: None,
+            jev_api_client: None,
             original_text: INITIAL_ORIGINAL_TEXT.to_string(),
             original_text_scroll: 0,
             evaluation_text: String::new(),
@@ -80,6 +114,7 @@ impl Default for App {
             show_evaluation_overlay: false,
             terminal_width: 100,
             terminal_height: 30,
+            settings: SettingsState::default(),
         }
     }
 }
@@ -132,6 +167,28 @@ impl App {
         self.status_message = STATUS_HELP.to_string();
     }
 
+    pub fn enter_settings_view(&mut self, groq_from_env: bool) {
+        self.settings.return_mode = self.view_mode;
+        self.view_mode = ViewMode::Settings;
+        self.settings.field = SettingsField::Groq;
+        self.settings.groq_input.clear();
+        self.settings.jev_input.clear();
+        self.settings.groq_from_env = groq_from_env;
+        self.status_message.clear();
+    }
+
+    pub fn return_from_settings(&mut self) {
+        self.settings.groq_input.clear();
+        self.settings.jev_input.clear();
+        self.view_mode = self.settings.return_mode;
+        self.status_message = if self.view_mode == ViewMode::Normal {
+            STATUS_NORMAL
+        } else {
+            STATUS_MENU
+        }
+        .to_string();
+    }
+
     pub fn begin_editing(&mut self) {
         self.text_area_state.focus.set(true);
         self.text_area_state.scroll_cursor_to_visible();
@@ -158,7 +215,7 @@ impl App {
         self.status_message = STATUS_NORMAL.to_string();
     }
 
-    pub fn apply_generation_error(&mut self, error: &impl std::fmt::Display) {
+    pub fn apply_generation_error(&mut self, error: &dyn std::fmt::Display) {
         self.original_text = format!("{GENERATION_ERROR_PREFIX}{error}");
         self.status_message = STATUS_RUNTIME_ERROR.to_string();
     }
@@ -183,7 +240,7 @@ impl App {
         self.status_message = STATUS_INVALID_EVALUATION.to_string();
     }
 
-    pub fn fail_evaluation_request(&mut self, error: &impl std::fmt::Display) {
+    pub fn fail_evaluation_request(&mut self, error: &dyn std::fmt::Display) {
         self.evaluation_text = format!("エラー: {error}");
         self.evaluation_passed = false;
         self.show_evaluation_overlay = true;
@@ -257,5 +314,23 @@ impl App {
             overlay_area.height.saturating_sub(BLOCK_BORDER_SIZE),
             overlay_area.width.saturating_sub(BLOCK_BORDER_SIZE),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn returning_from_settings_clears_entered_api_keys() {
+        let mut app = App::default();
+        app.enter_settings_view(false);
+        app.settings.groq_input = "groq-secret".to_string();
+        app.settings.jev_input = "jev-secret".to_string();
+
+        app.return_from_settings();
+
+        assert!(app.settings.groq_input.is_empty());
+        assert!(app.settings.jev_input.is_empty());
     }
 }

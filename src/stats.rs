@@ -210,6 +210,38 @@ mod tests {
     };
 
     #[test]
+    fn loads_legacy_evaluation_without_total_score() {
+        let legacy_stats = r#"{
+            "results": [{
+                "timestamp": "2026-09-24T12:00:00+09:00",
+                "passed": true,
+                "evaluation": {
+                    "appropriate": true,
+                    "importance": 4,
+                    "conciseness": 3,
+                    "accuracy": 5,
+                    "improvement1": "改善1",
+                    "improvement2": "改善2",
+                    "improvement3": "改善3",
+                    "overall_passed": true
+                }
+            }]
+        }"#;
+        let total_score = serde_json::from_str::<TrainingStats>(legacy_stats)
+            .map_err(|error| error.to_string())
+            .map(|stats| {
+                stats.results.first().map(|result| {
+                    result
+                        .evaluation
+                        .as_ref()
+                        .map(|evaluation| evaluation.total_score)
+                })
+            });
+
+        assert_eq!(total_score, Ok(Some(Some(None))));
+    }
+
+    #[test]
     fn test_badge_awarding_consecutive() {
         let mut stats = TrainingStats::default();
 
@@ -366,6 +398,7 @@ mod tests {
                 improvement2: "なし".to_string(),
                 improvement3: "なし".to_string(),
                 overall_passed: true,
+                total_score: Some(80),
             }),
         });
         stats.results.push(TrainingResult {
@@ -380,6 +413,7 @@ mod tests {
                 improvement2: "冗長".to_string(),
                 improvement3: "不正確".to_string(),
                 overall_passed: false,
+                total_score: None,
             }),
         });
 

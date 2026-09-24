@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, TEXT_WRAP_MARGIN, ViewMode};
+use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsField, TEXT_WRAP_MARGIN, ViewMode};
 use crate::help;
 use crate::reports;
 use rat_text::text_area::{TextArea, TextWrap};
@@ -7,7 +7,7 @@ use ratatui::{
     prelude::*,
     style::Modifier,
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
 const MENU_TITLE_ART: [&str; 6] = [
@@ -36,6 +36,10 @@ pub fn render(app: &mut App, frame: &mut Frame) {
         }
         ViewMode::Help => {
             render_help_view(app, frame);
+            return;
+        }
+        ViewMode::Settings => {
+            render_settings_view(app, frame);
             return;
         }
         ViewMode::Normal => {}
@@ -216,7 +220,13 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::TOP);
     let status_message = &app.status_message;
-    let status_text = format!(" {status_message} | r: レポート | h: ヘルプ | q: 終了 ");
+    let settings_hint = if matches!(app.view_mode, ViewMode::Menu | ViewMode::Normal) {
+        " | s: 設定"
+    } else {
+        ""
+    };
+    let status_text =
+        format!(" {status_message} | r: レポート | h: ヘルプ{settings_hint} | q: 終了 ");
     let paragraph = Paragraph::new(status_text)
         .alignment(Alignment::Right)
         .block(block);
@@ -306,6 +316,59 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
 
     frame.render_widget(paragraph, *menu_area);
     render_status_bar(app, frame, *status_area);
+}
+
+fn render_settings_view(app: &App, frame: &mut Frame) {
+    let block = Block::default()
+        .title("API キー設定")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(frame.area());
+    frame.render_widget(block, frame.area());
+    let groq = "•".repeat(app.settings.groq_input.chars().count());
+    let jev = "•".repeat(app.settings.jev_input.chars().count());
+    let groq_selected = app.settings.field == SettingsField::Groq;
+    let jev_selected = app.settings.field == SettingsField::Jev;
+    let groq_state = if app.settings.groq_from_env {
+        "GROQ_API_KEY 環境変数を使用中"
+    } else if app.settings.groq_saved {
+        "保存済み"
+    } else {
+        "未設定"
+    };
+    let jev_state = if app.settings.jev_saved {
+        "保存済み"
+    } else {
+        "未設定"
+    };
+    let lines = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(
+                "{} Groq API キー ({groq_state})",
+                if groq_selected { ">" } else { " " }
+            ),
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(format!("  {groq}")),
+        Line::from("  空欄のままなら現在の値を保持します。"),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(
+                "{} Jev API キー ({jev_state})",
+                if jev_selected { ">" } else { " " }
+            ),
+            Style::default().fg(Color::Yellow),
+        )),
+        Line::from(format!("  {jev}")),
+        Line::from(""),
+        Line::from("Enter: 次へ/保存 | Esc: キャンセル"),
+        Line::from(app.status_message.as_str()),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::default().padding(Padding::new(2, 2, 1, 1))),
+        inner,
+    );
 }
 
 fn render_help_view(app: &App, frame: &mut Frame) {

@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, ViewMode};
+use crate::app::{App, MENU_OPTIONS, SettingsField, ViewMode};
 use crate::error::AppError;
 use rat_text::event::HandleEvent;
 use ratatui::{
@@ -13,6 +13,7 @@ pub enum AppAction {
     Evaluate,
     NextTraining,
     StartTraining,
+    SaveSettings,
 }
 
 pub fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
@@ -33,6 +34,7 @@ pub fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
                     handle_help_events(app, key);
                     return Ok(None);
                 }
+                ViewMode::Settings => return Ok(handle_settings_events(app, key)),
                 ViewMode::Normal => {
                     if app.text_area_state.focus.get() {
                         return Ok(handle_editing_events(app, &ev, key));
@@ -75,9 +77,37 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
         KeyCode::Char('h') => {
             app.enter_help_view();
         }
+        KeyCode::Char('s') => app.enter_settings_view(app.settings.groq_from_env),
         KeyCode::Char('q') => {
             app.should_quit = true;
         }
+        _ => {}
+    }
+    None
+}
+
+fn handle_settings_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
+    let field = app.settings.field;
+    match key.code {
+        KeyCode::Esc => {
+            app.return_from_settings();
+        }
+        KeyCode::Enter if field == SettingsField::Groq => {
+            app.settings.field = SettingsField::Jev;
+        }
+        KeyCode::Enter => return Some(AppAction::SaveSettings),
+        KeyCode::Backspace => match field {
+            SettingsField::Groq => {
+                app.settings.groq_input.pop();
+            }
+            SettingsField::Jev => {
+                app.settings.jev_input.pop();
+            }
+        },
+        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => match field {
+            SettingsField::Groq => app.settings.groq_input.push(ch),
+            SettingsField::Jev => app.settings.jev_input.push(ch),
+        },
         _ => {}
     }
     None
@@ -152,6 +182,7 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
         KeyCode::Char('r') => {
             app.enter_report_view();
         }
+        KeyCode::Char('s') => app.enter_settings_view(app.settings.groq_from_env),
         KeyCode::Char('h') => {
             app.enter_help_view();
         }
