@@ -61,6 +61,8 @@ pub struct EvaluationScores {
     pub improvement2: String,
     pub improvement3: String,
     pub overall_passed: bool,
+    #[serde(default)]
+    pub total_score: Option<u8>,
 }
 
 #[derive(Clone, Debug)]

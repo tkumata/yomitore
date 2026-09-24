@@ -4,7 +4,7 @@
 
 ## 概要
 
-このツールは Rust で開発されており、GroqCloud API を活用して、読解と要約の演習を継続的に提供します。主要なデスクトップオペレーティングシステム (Windows, macOS, Linux) でシームレスに動作するターミナルベースのアプリケーションです。
+このツールは Rust で開発されており、GroqCloud API で文章と改善点を生成し、TypeSafe AI の Jev で要約を判定します。主要なデスクトップオペレーティングシステム (Windows, macOS, Linux) で動作するターミナルベースのアプリケーションです。
 
 ![Screenshot](./docs/images/screenshot-00.png)
 ![Screenshot](./docs/images/screenshot-02.png)
@@ -19,7 +19,7 @@
    - 1440 字: 複雑な文章 (A4 用紙一枚)
    - 2880 字: 長い文章 (A4 用紙二枚)
 2. **対話的な要約**: ユーザーは、提供された文章の要約を入力するよう求められます。複数行の入力もサポートされています。
-3. **AI による評価**: ユーザーの要約は、元の文章との比較評価のために AI に送信されます。悪かった点を具体的に教えてくれます。
+3. **AI による評価**: Jev が要約の適切さ、重要情報、簡潔性、正確性、合否を判定し、Groq が改善点を3件示します。3つの評価から0〜100点の総合得点も表示します。
 4. **継続的なループ**: フィードバックを受けた後、ユーザーは次の問題に進むことができ、継続的な練習が可能です。
 5. **グラフ**: 直近180日と週次の正誤履歴を、週横軸・曜日縦軸のヒートマップや棒グラフで確認できます。
 6. **スコア**: 直近180日の「重要情報」「簡潔性」「正確性」の平均値と中央値を保存・表示できます。
@@ -42,7 +42,9 @@
 
 ### API キーの設定
 
-このアプリケーションを使用するには、[GroqCloud](https://console.groq.com/keys) の有効な API キーが必要です。アプリケーションは、以下の 2 つの方法のいずれかで設定できます。
+文章生成には [GroqCloud](https://console.groq.com/keys) の API キー、要約評価には [TypeSafe AI](https://docs.typesafe.ai/introduction) の Jev API キーが必要です。起動後にメニュー、またはトレーニング画面の `s` で設定画面を開き、両方のキーを保存できます。保存済みキーの値は画面に再表示されません。
+
+Groq キーは以下の方法でも設定できます。環境変数が設定ファイルより優先されます。Jev キーは設定画面または設定ファイルで設定します。
 
 1. **環境変数 (推奨)**:
    `GROQ_API_KEY` 環境変数を設定します。
@@ -57,12 +59,13 @@
    **ファイルパス**:
    - **Linux**: `~/.config/yomitore/config.toml`
    - **macOS**: `~/Library/Application Support/yomitore/config.toml`
-   - **Windows**: `C:\Users\<user>\AppData\Roaming\yomitore\config\config.toml`
+   - **Windows**: `%APPDATA%\yomitore\config.toml`
 
    **内容**:
 
    ```toml
    api_key = "your_api_key_here"
+   jev_api_key = "your_jev_api_key_here"
    ```
 
    ※ アプリケーション起動時に、このファイルに有効なキーが保存されている場合は、自動的に読み込まれます。
