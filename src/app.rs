@@ -330,7 +330,7 @@ mod tests {
 
         app.return_from_settings();
 
-        assert!(app.settings.groq_input.is_empty());
-        assert!(app.settings.jev_input.is_empty());
+        assert_eq!(app.settings.groq_input, "");
+        assert_eq!(app.settings.jev_input, "");
     }
 }
