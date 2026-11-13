@@ -70,10 +70,6 @@ jobs:
             artifact_name: yomitore
             asset_name: yomitore-linux-x86_64
           - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: yomitore
-            asset_name: yomitore-macos-x86_64
-          - os: macos-latest
             target: aarch64-apple-darwin
             artifact_name: yomitore
             asset_name: yomitore-macos-aarch64
