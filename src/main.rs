@@ -23,6 +23,7 @@ use crate::{
     events::AppAction,
     models::EvaluationScores,
 };
+use std::mem::DropGuard;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -36,6 +37,7 @@ async fn main() -> Result<(), AppError> {
             "設定を読み込めませんでした。config.toml を確認してください。".to_string();
     }
     let mut tui = tui::init()?;
+    let restore_guard = DropGuard::new((), tui::restore_on_drop);
 
     while !app.should_quit {
         tui.draw(|frame| ui::render(&mut app, frame))?;
@@ -50,6 +52,7 @@ async fn main() -> Result<(), AppError> {
         }
     }
 
+    DropGuard::dismiss(restore_guard);
     tui::restore()?;
     Ok(())
 }

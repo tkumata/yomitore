@@ -167,7 +167,7 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
         }
         KeyCode::Char('e') => {
             if !app.evaluation_text.is_empty() {
-                app.show_evaluation_overlay = !app.show_evaluation_overlay;
+                app.show_evaluation_overlay.toggle();
                 if app.show_evaluation_overlay {
                     app.evaluation_overlay_scroll = 0;
                 }

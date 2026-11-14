@@ -55,7 +55,7 @@ fn get_buddy_ascii(level: u32) -> &'static str {
         (_, 0) => BUDDY_LEVEL_3_A,
         (_, _) => BUDDY_LEVEL_3_B,
     };
-    art.strip_prefix('\n').unwrap_or(art)
+    art.trim_prefix('\n')
 }
 
 fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {

@@ -1800,9 +1800,9 @@ dependencies = [
 
 [[package]]
 name = "rat-text"
-version = "3.1.1"
+version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2629e929bb15d7b1d541899c706e7354cbea3c65bac22edc7c1cb2504e8bbb51"
+checksum = "aa99d3fab5709e56cfe1ab7b6ed83e05a2feaac3b7bde02a1dafac371f557161"
 dependencies = [
  "chrono",
  "dyn-clone",
@@ -3347,7 +3347,7 @@ dependencies = [
 
 [[package]]
 name = "yomitore"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "chrono",
  "crossterm",

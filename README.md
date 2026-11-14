@@ -36,7 +36,7 @@
 
 ## 要件
 
-- [Rust](https://www.rust-lang.org/tools/install) (`cargo` を含む)
+- [Rust](https://www.rust-lang.org/tools/install) 1.100 以上 (`cargo` を含む)
 
 ## セットアップ
 
