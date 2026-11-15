@@ -21,6 +21,12 @@ rat-text = "3.1.2"
 chrono = { version = "0.4.45", features = ["serde"] }
 rand = "0.10.3"
 
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = "symbols"
+
 [lints.cargo]
 unused_dependencies = "deny"
 
