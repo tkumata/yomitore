@@ -2,6 +2,7 @@ use crate::error::AppError;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::mem::DropGuard;
 use std::path::{Path, PathBuf};
 
 #[derive(Default)]
@@ -116,15 +117,15 @@ fn write_config_atomically(path: &Path, contents: &str) -> Result<(), AppError> 
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let write_result = (|| -> Result<(), AppError> {
-        let mut file = options.open(&temporary)?;
+    let file = options.open(&temporary)?;
+    let cleanup_guard = DropGuard::new(&temporary, |path| {
+        let _ = fs::remove_file(path);
+    });
+    {
+        // Close the file before cleanup or replacement, including on Windows.
+        let mut file = file;
         file.write_all(contents.as_bytes())?;
         file.sync_all()?;
-        Ok(())
-    })();
-    if let Err(error) = write_result {
-        let _ = fs::remove_file(&temporary);
-        return Err(error);
     }
 
     #[cfg(unix)]
@@ -158,10 +159,9 @@ fn write_config_atomically(path: &Path, contents: &str) -> Result<(), AppError> 
             }
         }
     };
-    if commit_result.is_err() {
-        let _ = fs::remove_file(&temporary);
-    }
-    commit_result
+    commit_result?;
+    DropGuard::dismiss(cleanup_guard);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -288,6 +288,49 @@ mod tests {
             observe_failed_save(),
             Ok((true, "api_key = [invalid toml".to_string()))
         );
+    }
+
+    #[test]
+    fn successful_write_leaves_only_config_file() -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TemporaryDirectory::new()?;
+        let path = temp.config_path();
+        write_config_atomically(&path, "api_key = \"new-key\"\n")?;
+
+        let mut entries = fs::read_dir(&temp.0)?;
+        if entries.next().transpose()?.map(|entry| entry.path()) != Some(path)
+            || entries.next().is_some()
+        {
+            return Err("successful write left unexpected files".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_replacement_removes_temporary_file_and_preserves_destination()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let temp = TemporaryDirectory::new()?;
+        let path = temp.config_path();
+        fs::create_dir(&path)?;
+        let existing = path.join("existing");
+        fs::write(&existing, "preserved")?;
+
+        if !matches!(
+            write_config_atomically(&path, "api_key = \"new-key\"\n"),
+            Err(AppError::IoError(_))
+        ) {
+            return Err("replacement over a directory did not return an I/O error".into());
+        }
+        if fs::read_to_string(existing)? != "preserved" {
+            return Err("failed replacement changed the destination".into());
+        }
+        let mut entries = fs::read_dir(&temp.0)?;
+        if entries.next().transpose()?.map(|entry| entry.path()) != Some(path)
+            || entries.next().is_some()
+        {
+            return Err("failed replacement left unexpected files".into());
+        }
+        Ok(())
     }
 
     #[test]
