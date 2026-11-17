@@ -30,22 +30,18 @@ pub fn calculate_weekly_stats(
     weeks: usize,
     now: DateTime<Local>,
 ) -> Vec<WeeklyStats> {
-    let mut weekly_stats = Vec::with_capacity(weeks);
-
-    for week in 0..weeks {
+    Vec::from_fn(weeks, |week| {
         let offset = i64::try_from(weeks - week - 1).unwrap_or(i64::MAX);
         let week_start = now - chrono::Duration::weeks(offset);
         let week_end = week_start + chrono::Duration::weeks(1);
         let (correct, incorrect) = count_results_in_range(results, week_start, week_end);
 
-        weekly_stats.push(WeeklyStats {
+        WeeklyStats {
             week_number: week + 1,
             correct,
             incorrect,
-        });
-    }
-
-    weekly_stats
+        }
+    })
 }
 
 pub fn get_recent_evaluation_summary(results: &[TrainingResult], days: usize) -> EvaluationSummary {

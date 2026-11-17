@@ -361,24 +361,48 @@ mod tests {
 
         let weekly_stats = calculate_weekly_stats(&stats.results, 4, now);
 
-        let this_week_stats = weekly_stats.last().cloned().unwrap_or(WeeklyStats {
-            week_number: 0,
-            correct: 0,
-            incorrect: 0,
-        });
-        assert_eq!(this_week_stats.correct, 1);
-        assert_eq!(this_week_stats.incorrect, 0);
+        let counts: Vec<_> = weekly_stats
+            .iter()
+            .map(|week| (week.week_number, week.correct, week.incorrect))
+            .collect();
+        assert_eq!(counts, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (4, 1, 0)]);
+    }
 
-        let last_week_stats = weekly_stats
-            .get(weekly_stats.len().saturating_sub(2))
-            .cloned()
-            .unwrap_or(WeeklyStats {
-                week_number: 0,
-                correct: 0,
-                incorrect: 0,
-            });
-        assert_eq!(last_week_stats.correct, 0);
-        assert_eq!(last_week_stats.incorrect, 2);
+    #[test]
+    fn weekly_stats_for_zero_weeks_are_empty() {
+        let now = Local::now();
+        let results = [TrainingResult {
+            timestamp: now,
+            passed: true,
+            evaluation: None,
+        }];
+        assert!(calculate_weekly_stats(&results, 0, now).is_empty());
+    }
+
+    #[test]
+    fn weekly_stats_include_start_and_exclude_end_of_each_week() {
+        let now = Local::now();
+        let start = now - chrono::Duration::weeks(1);
+        let end = now + chrono::Duration::weeks(1);
+        let results = [
+            (start - chrono::Duration::nanoseconds(1), false),
+            (start, true),
+            (now - chrono::Duration::nanoseconds(1), false),
+            (now, false),
+            (end - chrono::Duration::nanoseconds(1), true),
+            (end, false),
+        ]
+        .map(|(timestamp, passed)| TrainingResult {
+            timestamp,
+            passed,
+            evaluation: None,
+        });
+
+        let counts: Vec<_> = calculate_weekly_stats(&results, 2, now)
+            .iter()
+            .map(|week| (week.week_number, week.correct, week.incorrect))
+            .collect();
+        assert_eq!(counts, [(1, 1, 1), (2, 1, 1)]);
     }
 
     #[test]
