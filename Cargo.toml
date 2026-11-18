@@ -1,6 +1,6 @@
 [package]
 name = "yomitore"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2024"
 rust-version = "1.100"
 
@@ -28,8 +28,8 @@ ratatui = { version = "0.30.2", features = [
     "unstable-rendered-line-info",
 ] }
 crossterm = "0.29"
-rat-text = "3.1.5"
-chrono = { version = "0.4.45", features = ["serde"] }
+ratatui-textarea = "0.9.4"
+jiff = { version = "1.0.1", features = ["serde"] }
 rand = "0.10.4"
 
 [lints.cargo]

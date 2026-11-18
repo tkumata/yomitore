@@ -1,9 +1,9 @@
 use crate::models::{
     Badge, BadgeType, Buddy, DailyStats, EvaluationScores, EvaluationSummary, TrainingResult,
-    WeeklyStats,
+    WeeklyStats, local_timestamp,
 };
 use crate::stats_analysis;
-use chrono::{DateTime, Local, NaiveDate};
+use jiff::{SignedDuration, Timestamp, civil::Date, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -14,7 +14,7 @@ const MAX_CONSECUTIVE_STREAK: usize = 50;
 const MAX_CUMULATIVE_MILESTONE: usize = 100;
 const BUDDY_EXP_LEVEL2: u32 = 10;
 const BUDDY_EXP_DEFAULT: u32 = 5;
-const BUDDY_PENALTY_DAYS: i64 = 3;
+const BUDDY_PENALTY_DELAY: SignedDuration = SignedDuration::from_hours(72);
 const APP_DIR_NAME: &str = "yomitore";
 const STATS_FILE_NAME: &str = "stats.json";
 
@@ -35,8 +35,8 @@ pub struct TrainingStats {
     pub current_streak: usize,
     #[serde(default, alias = "pet")]
     pub buddy: Buddy,
-    #[serde(default)]
-    pub last_training_date: Option<DateTime<Local>>,
+    #[serde(default, serialize_with = "local_timestamp::serialize_option")]
+    pub last_training_date: Option<Timestamp>,
 }
 
 impl TrainingStats {
@@ -49,7 +49,7 @@ impl TrainingStats {
         let mut stats: TrainingStats = serde_json::from_str(&content)?;
 
         stats.recalculate_streak();
-        stats.check_buddy_penalty();
+        stats.check_buddy_penalty(Timestamp::now());
         stats.rebuild_badges_from_history();
 
         Ok(stats)
@@ -69,7 +69,7 @@ impl TrainingStats {
         &mut self,
         current_streak: usize,
         total_correct: usize,
-        earned_at: DateTime<Local>,
+        earned_at: Timestamp,
     ) {
         if current_streak.is_multiple_of(BADGE_INTERVAL) && current_streak <= MAX_CONSECUTIVE_STREAK
         {
@@ -105,18 +105,15 @@ impl TrainingStats {
         }
     }
 
-    fn check_buddy_penalty(&mut self) {
-        if let Some(last_date) = self.last_training_date {
-            let now = Local::now();
-            let days_diff = (now - last_date).num_days();
-
-            if days_diff >= BUDDY_PENALTY_DAYS {
-                if self.buddy.level > 1 {
-                    self.buddy.level -= 1;
-                }
-                self.buddy.exp = 0;
-                self.last_training_date = Some(now);
+    fn check_buddy_penalty(&mut self, now: Timestamp) {
+        if let Some(last_date) = self.last_training_date
+            && now.duration_since(last_date) >= BUDDY_PENALTY_DELAY
+        {
+            if self.buddy.level > 1 {
+                self.buddy.level -= 1;
             }
+            self.buddy.exp = 0;
+            self.last_training_date = Some(now);
         }
     }
 
@@ -125,7 +122,7 @@ impl TrainingStats {
         passed: bool,
         evaluation: Option<EvaluationScores>,
     ) {
-        let now = Local::now();
+        let now = Timestamp::now();
         self.results.push(TrainingResult {
             timestamp: now,
             passed,
@@ -173,12 +170,14 @@ impl TrainingStats {
         }
     }
 
-    pub fn get_daily_stats(&self, days: usize) -> HashMap<NaiveDate, DailyStats> {
-        stats_analysis::calculate_daily_stats(&self.results, days, Local::now().date_naive())
+    pub fn get_daily_stats(&self, days: usize) -> HashMap<Date, DailyStats> {
+        let zone = TimeZone::system();
+        let today = zone.to_datetime(Timestamp::now()).date();
+        stats_analysis::calculate_daily_stats(&self.results, days, today, &zone)
     }
 
     pub fn get_weekly_stats(&self, weeks: usize) -> Vec<WeeklyStats> {
-        stats_analysis::calculate_weekly_stats(&self.results, weeks, Local::now())
+        stats_analysis::calculate_weekly_stats(&self.results, weeks, Timestamp::now())
     }
 
     pub fn get_badges_by_type(&self) -> (Vec<&Badge>, Vec<&Badge>) {
@@ -198,7 +197,9 @@ impl TrainingStats {
     }
 
     pub fn get_recent_evaluation_summary(&self, days: usize) -> EvaluationSummary {
-        stats_analysis::get_recent_evaluation_summary(&self.results, days)
+        let zone = TimeZone::system();
+        let today = zone.to_datetime(Timestamp::now()).date();
+        stats_analysis::get_recent_evaluation_summary(&self.results, days, today, &zone)
     }
 }
 
@@ -239,6 +240,75 @@ mod tests {
             });
 
         assert_eq!(total_score, Ok(Some(Some(None))));
+    }
+
+    #[test]
+    fn legacy_stats_timestamps_keep_their_instants_and_local_offsets() {
+        let legacy = r#"{
+            "results": [{"timestamp": "2026-09-24T12:00:00.123456789+09:00", "passed": true}],
+            "badges": [{"badge_type": {"ConsecutiveStreak": 5},
+                        "earned_at": "2026-09-24T03:00:01.120-04:00"}],
+            "last_training_date": "2026-09-24T03:00:02.345Z"
+        }"#;
+        let Ok(stats) = serde_json::from_str::<TrainingStats>(legacy) else {
+            unreachable!("invalid legacy stats fixture");
+        };
+        let timestamps = [
+            (
+                "/results/0/timestamp",
+                stats.results.first().map(|result| result.timestamp),
+                "2026-09-24T03:00:00.123456789Z",
+            ),
+            (
+                "/badges/0/earned_at",
+                stats.badges.first().map(|badge| badge.earned_at),
+                "2026-09-24T07:00:01.120Z",
+            ),
+            (
+                "/last_training_date",
+                stats.last_training_date,
+                "2026-09-24T03:00:02.345Z",
+            ),
+        ];
+        let Ok(saved) = serde_json::to_value(&stats) else {
+            unreachable!("test stats could not be serialized");
+        };
+        let zone = TimeZone::system();
+        for (path, actual, expected) in timestamps {
+            let Ok(expected) = expected.parse::<Timestamp>() else {
+                unreachable!("invalid expected timestamp");
+            };
+            assert_eq!(actual, Some(expected), "{path}");
+            let formatted = expected
+                .display_with_offset(zone.to_offset(expected))
+                .to_string();
+            let saved_timestamp = saved.pointer(path).and_then(serde_json::Value::as_str);
+            assert_eq!(saved_timestamp, Some(formatted.as_str()));
+            assert_eq!(formatted.parse::<Timestamp>().ok(), Some(expected));
+
+            let mut invalid = saved.clone();
+            let Some(value) = invalid.pointer_mut(path) else {
+                unreachable!("missing timestamp at {path}");
+            };
+            *value = serde_json::Value::String("invalid timestamp".to_owned());
+            assert!(serde_json::from_value::<TrainingStats>(invalid).is_err());
+        }
+
+        for legacy in [
+            r#"{"results": []}"#,
+            r#"{"results": [], "last_training_date": null}"#,
+        ] {
+            let Ok(stats) = serde_json::from_str::<TrainingStats>(legacy) else {
+                unreachable!("invalid legacy stats fixture");
+            };
+            assert!(stats.last_training_date.is_none());
+            assert_eq!(
+                serde_json::to_value(stats)
+                    .ok()
+                    .and_then(|value| value.get("last_training_date").cloned()),
+                Some(serde_json::Value::Null)
+            );
+        }
     }
 
     #[test]
@@ -301,33 +371,39 @@ mod tests {
     #[test]
     fn test_calculate_daily_stats() {
         let mut stats = TrainingStats::default();
-        let today = Local::now().date_naive();
+        let zone = TimeZone::fixed(jiff::tz::offset(9));
+        let today = jiff::civil::date(2026, 7, 3);
+        let Ok(now) = "2026-07-02T15:30:00Z".parse() else {
+            unreachable!("invalid timestamp fixture");
+        };
 
         stats.results.push(TrainingResult {
-            timestamp: Local::now(),
+            timestamp: now,
             passed: true,
             evaluation: None,
         });
         stats.results.push(TrainingResult {
-            timestamp: Local::now(),
+            timestamp: now,
             passed: false,
             evaluation: None,
         });
 
-        let yesterday = Local::now() - chrono::Duration::days(1);
+        let Ok(yesterday) = "2026-07-02T14:59:59Z".parse() else {
+            unreachable!("invalid timestamp fixture");
+        };
         stats.results.push(TrainingResult {
             timestamp: yesterday,
             passed: true,
             evaluation: None,
         });
 
-        let daily_stats = calculate_daily_stats(&stats.results, 7, today);
+        let daily_stats = calculate_daily_stats(&stats.results, 7, today, &zone);
 
         let today_stats = daily_stats.get(&today).cloned().unwrap_or_default();
         assert_eq!(today_stats.correct, 1);
         assert_eq!(today_stats.incorrect, 1);
 
-        let yesterday_date = yesterday.date_naive();
+        let yesterday_date = jiff::civil::date(2026, 7, 2);
         let yesterday_stats = daily_stats
             .get(&yesterday_date)
             .cloned()
@@ -339,7 +415,7 @@ mod tests {
     #[test]
     fn test_calculate_weekly_stats() {
         let mut stats = TrainingStats::default();
-        let now = Local::now();
+        let now = Timestamp::now();
 
         stats.results.push(TrainingResult {
             timestamp: now,
@@ -347,7 +423,7 @@ mod tests {
             evaluation: None,
         });
 
-        let last_week = now - chrono::Duration::days(7);
+        let last_week = now - SignedDuration::from_hours(168);
         stats.results.push(TrainingResult {
             timestamp: last_week,
             passed: false,
@@ -370,7 +446,7 @@ mod tests {
 
     #[test]
     fn weekly_stats_for_zero_weeks_are_empty() {
-        let now = Local::now();
+        let now = Timestamp::now();
         let results = [TrainingResult {
             timestamp: now,
             passed: true,
@@ -380,16 +456,20 @@ mod tests {
     }
 
     #[test]
-    fn weekly_stats_include_start_and_exclude_end_of_each_week() {
-        let now = Local::now();
-        let start = now - chrono::Duration::weeks(1);
-        let end = now + chrono::Duration::weeks(1);
+    fn weekly_stats_include_start_and_exclude_end_across_daylight_saving() {
+        let (Ok(now), Ok(start), Ok(end)) = (
+            "2026-03-11T12:00:00-04:00".parse::<Timestamp>(),
+            "2026-03-04T11:00:00-05:00".parse::<Timestamp>(),
+            "2026-03-18T12:00:00-04:00".parse::<Timestamp>(),
+        ) else {
+            unreachable!("invalid timestamp fixtures");
+        };
         let results = [
-            (start - chrono::Duration::nanoseconds(1), false),
+            (start - SignedDuration::from_nanos(1), false),
             (start, true),
-            (now - chrono::Duration::nanoseconds(1), false),
+            (now - SignedDuration::from_nanos(1), false),
             (now, false),
-            (end - chrono::Duration::nanoseconds(1), true),
+            (end - SignedDuration::from_nanos(1), true),
             (end, false),
         ]
         .map(|(timestamp, passed)| TrainingResult {
@@ -408,7 +488,14 @@ mod tests {
     #[test]
     fn test_recent_evaluation_summary() {
         let mut stats = TrainingStats::default();
-        let now = Local::now();
+        let zone = TimeZone::fixed(jiff::tz::offset(9));
+        let today = jiff::civil::date(2026, 7, 3);
+        let (Ok(now), Ok(earlier)) = (
+            "2026-07-02T15:30:00Z".parse(),
+            "2026-07-02T14:59:59Z".parse(),
+        ) else {
+            unreachable!("invalid timestamp fixtures");
+        };
 
         stats.results.push(TrainingResult {
             timestamp: now,
@@ -441,7 +528,15 @@ mod tests {
             }),
         });
 
-        let summary = stats.get_recent_evaluation_summary(30);
+        let Some(result) = stats.results.first().cloned() else {
+            unreachable!("missing test result");
+        };
+        stats.results.push(TrainingResult {
+            timestamp: earlier,
+            ..result
+        });
+        let summary =
+            stats_analysis::get_recent_evaluation_summary(&stats.results, 1, today, &zone);
         assert_eq!(summary.count, 2);
         let importance = summary.importance.as_ref().map(|s| (s.average, s.median));
         assert!(importance.is_some());
@@ -484,7 +579,7 @@ mod tests {
 
         for _ in 0..3 {
             stats.results.push(TrainingResult {
-                timestamp: Local::now(),
+                timestamp: Timestamp::now(),
                 passed: true,
                 evaluation: None,
             });
@@ -493,12 +588,12 @@ mod tests {
         assert_eq!(stats.current_streak, 3);
 
         stats.results.push(TrainingResult {
-            timestamp: Local::now(),
+            timestamp: Timestamp::now(),
             passed: false,
             evaluation: None,
         });
         stats.results.push(TrainingResult {
-            timestamp: Local::now(),
+            timestamp: Timestamp::now(),
             passed: true,
             evaluation: None,
         });
@@ -508,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_badge_display_text_japanese() {
-        let now = Local::now();
+        let now = Timestamp::now();
         let b1 = Badge {
             badge_type: BadgeType::ConsecutiveStreak(5),
             earned_at: now,
@@ -554,20 +649,26 @@ mod tests {
     }
 
     #[test]
-    fn test_buddy_penalty() {
+    fn test_buddy_penalty_at_72_hours() {
+        let (Ok(last), Ok(now)) = (
+            "2026-03-06T12:00:00-05:00".parse::<Timestamp>(),
+            "2026-03-09T13:00:00-04:00".parse::<Timestamp>(),
+        ) else {
+            unreachable!("invalid timestamp fixtures");
+        };
         let mut stats = TrainingStats::default();
         stats.buddy.level = 2;
         stats.buddy.exp = 3;
-        stats.last_training_date = Some(Local::now() - chrono::Duration::days(3));
+        stats.last_training_date = Some(last);
 
-        stats.check_buddy_penalty();
+        stats.check_buddy_penalty(now - SignedDuration::from_nanos(1));
+        assert_eq!(stats.buddy.level, 2);
+        assert_eq!(stats.buddy.exp, 3);
+        assert_eq!(stats.last_training_date, Some(last));
 
+        stats.check_buddy_penalty(now);
         assert_eq!(stats.buddy.level, 1);
         assert_eq!(stats.buddy.exp, 0);
-        assert!(
-            stats
-                .last_training_date
-                .is_some_and(|date| date > Local::now() - chrono::Duration::minutes(1))
-        );
+        assert_eq!(stats.last_training_date, Some(now));
     }
 }

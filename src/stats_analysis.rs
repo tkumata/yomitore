@@ -1,18 +1,21 @@
 use crate::models::{
     DailyStats, EvaluationScoreStats, EvaluationSummary, TrainingResult, WeeklyStats,
 };
-use chrono::{DateTime, Local, NaiveDate};
+use jiff::{SignedDuration, Span, Timestamp, civil::Date, tz::TimeZone};
 use std::collections::HashMap;
+
+const HOURS_PER_WEEK: i64 = 168;
 
 pub fn calculate_daily_stats(
     results: &[TrainingResult],
     days: usize,
-    today: NaiveDate,
-) -> HashMap<NaiveDate, DailyStats> {
+    today: Date,
+    zone: &TimeZone,
+) -> HashMap<Date, DailyStats> {
     let mut daily_map = initialize_daily_stats(days, today);
 
     for result in results {
-        let date = result.timestamp.date_naive();
+        let date = zone.to_datetime(result.timestamp).date();
         if let Some(stats) = daily_map.get_mut(&date) {
             if result.passed {
                 stats.correct += 1;
@@ -28,12 +31,12 @@ pub fn calculate_daily_stats(
 pub fn calculate_weekly_stats(
     results: &[TrainingResult],
     weeks: usize,
-    now: DateTime<Local>,
+    now: Timestamp,
 ) -> Vec<WeeklyStats> {
     Vec::from_fn(weeks, |week| {
         let offset = i64::try_from(weeks - week - 1).unwrap_or(i64::MAX);
-        let week_start = now - chrono::Duration::weeks(offset);
-        let week_end = week_start + chrono::Duration::weeks(1);
+        let week_start = now - SignedDuration::from_hours(offset.saturating_mul(HOURS_PER_WEEK));
+        let week_end = week_start + SignedDuration::from_hours(HOURS_PER_WEEK);
         let (correct, incorrect) = count_results_in_range(results, week_start, week_end);
 
         WeeklyStats {
@@ -44,17 +47,21 @@ pub fn calculate_weekly_stats(
     })
 }
 
-pub fn get_recent_evaluation_summary(results: &[TrainingResult], days: usize) -> EvaluationSummary {
-    let today = Local::now().date_naive();
+pub fn get_recent_evaluation_summary(
+    results: &[TrainingResult],
+    days: usize,
+    today: Date,
+    zone: &TimeZone,
+) -> EvaluationSummary {
     let start_date =
-        today - chrono::Duration::days(i64::try_from(days.saturating_sub(1)).unwrap_or(i64::MAX));
+        today - Span::new().days(i64::try_from(days.saturating_sub(1)).unwrap_or(i64::MAX));
 
     let mut importance_scores = Vec::new();
     let mut conciseness_scores = Vec::new();
     let mut accuracy_scores = Vec::new();
 
     for result in results {
-        if result.timestamp.date_naive() < start_date {
+        if zone.to_datetime(result.timestamp).date() < start_date {
             continue;
         }
         if let Some(evaluation) = &result.evaluation {
@@ -98,10 +105,10 @@ pub fn calculate_median(scores: &[u8]) -> f32 {
     }
 }
 
-fn initialize_daily_stats(days: usize, today: NaiveDate) -> HashMap<NaiveDate, DailyStats> {
+fn initialize_daily_stats(days: usize, today: Date) -> HashMap<Date, DailyStats> {
     let mut daily_map = HashMap::new();
     for i in 0..days {
-        let date = today - chrono::Duration::days(i64::try_from(i).unwrap_or(i64::MAX));
+        let date = today - Span::new().days(i64::try_from(i).unwrap_or(i64::MAX));
         daily_map.insert(date, DailyStats::default());
     }
     daily_map
@@ -109,8 +116,8 @@ fn initialize_daily_stats(days: usize, today: NaiveDate) -> HashMap<NaiveDate, D
 
 fn count_results_in_range(
     results: &[TrainingResult],
-    start: DateTime<Local>,
-    end: DateTime<Local>,
+    start: Timestamp,
+    end: Timestamp,
 ) -> (usize, usize) {
     let mut correct = 0;
     let mut incorrect = 0;

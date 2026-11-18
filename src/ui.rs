@@ -1,8 +1,6 @@
-use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsField, TEXT_WRAP_MARGIN, ViewMode};
+use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsField, ViewMode};
 use crate::help;
 use crate::reports;
-use rat_text::text_area::{TextArea, TextWrap};
-use rat_text::{HasScreenCursor, text_area::TextAreaState};
 use ratatui::{
     buffer::CellWidth,
     prelude::*,
@@ -43,7 +41,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
             render_settings_view(app, frame);
             return;
         }
-        ViewMode::Normal => {}
+        ViewMode::Normal | ViewMode::Editing => {}
     }
 
     let main_layout = Layout::default()
@@ -76,12 +74,6 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     }
 
     render_status_bar(app, frame, *status_area);
-
-    if app.text_area_state.focus.get()
-        && let Some((cx, cy)) = app.text_area_state.screen_cursor()
-    {
-        frame.set_cursor_position((cx, cy));
-    }
 }
 
 fn render_header(frame: &mut Frame, area: Rect) {
@@ -131,12 +123,10 @@ fn wrap_original_text(text: &str, width: u16) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
+fn render_summary_input(app: &App, frame: &mut Frame, area: Rect) {
     let title = "あなたの要約 (i:入力モード Esc:通常モード Ctrl+S:送信)";
 
-    clamp_textarea_scroll(&mut app.text_area_state);
-
-    let border_style = if app.text_area_state.focus.get() {
+    let border_style = if app.view_mode == ViewMode::Editing {
         Style::default().fg(Color::Cyan)
     } else {
         Style::default().fg(Color::Blue)
@@ -147,20 +137,24 @@ fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(border_style);
 
-    let textarea = TextArea::new()
-        .block(block)
-        .text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN))
-        .style(Style::default());
-
-    frame.render_stateful_widget(textarea, area, &mut app.text_area_state);
-}
-
-fn clamp_textarea_scroll(state: &mut TextAreaState) {
-    let max_v = usize::try_from(state.len_lines().saturating_sub(1)).unwrap_or(usize::MAX);
-    if state.vscroll.offset > max_v {
-        state.vscroll.offset = max_v;
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    if inner.is_empty() {
+        return;
     }
-    state.hscroll.offset = state.hscroll.limited_offset(state.hscroll.offset);
+    frame.render_widget(&app.summary_input, inner);
+    if app.view_mode == ViewMode::Editing {
+        let cursor = app.summary_input.screen_cursor();
+        let (top, left) = app.summary_input.scroll_offset();
+        let x = cursor.col.saturating_sub(usize::from(left));
+        let y = cursor.row.saturating_sub(usize::from(top));
+        if let Ok(y) = u16::try_from(y)
+            && y < inner.height
+        {
+            let x = u16::try_from(x).unwrap_or(u16::MAX).min(inner.width - 1);
+            frame.set_cursor_position((inner.x + x, inner.y + y));
+        }
+    }
 }
 
 fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
@@ -249,7 +243,10 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
 fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::TOP);
     let status_message = &app.status_message;
-    let settings_hint = if matches!(app.view_mode, ViewMode::Menu | ViewMode::Normal) {
+    let settings_hint = if matches!(
+        app.view_mode,
+        ViewMode::Menu | ViewMode::Normal | ViewMode::Editing
+    ) {
         " | s: 設定"
     } else {
         ""
