@@ -124,13 +124,13 @@
 
 ### 3.3. 要約入力機能 (main.rs, ui.rs)
 
-**使用クレート**: `ratatui`, `crossterm`, `rat-text`
+**使用クレート**: `ratatui`, `crossterm`, `ratatui-textarea`
 
 - **イベントポーリング**: `event::poll(Duration::from_millis(EVENT_POLL_INTERVAL_MS))`
   - `EVENT_POLL_INTERVAL_MS = 100` (定数化)
-- **モード管理**: `TextAreaState::focus` で入力モードを管理
-- **テキストエリア**: `rat-text::TextAreaState` を使用
-  - ワードラップ対応（`TextWrap::Word(10)`）
+- **モード管理**: `ViewMode::Editing` で入力モードを管理
+- **テキストエリア**: `ratatui_textarea::TextArea` を使用
+  - ワードラップを使用し、表示幅より長い単語は書記素の境界で折り返す
   - カーソル位置管理
   - マルチライン入力
 
@@ -139,7 +139,7 @@
 - `i` or `Enter`: 入力モード開始
 - `Esc`: 通常モードに戻る
 - `Ctrl+S`: 要約送信（`KeyModifiers::CONTROL`）
-- その他: rat-text が処理
+- `Home` / `End`: 折り返し後の表示行の行頭または行末へ移動
 
 ### 3.4. 要約評価機能 (api_client.rs, evaluation.rs)
 
@@ -235,7 +235,7 @@ pub struct TrainingStats {
     pub badges: Vec<Badge>,
     pub current_streak: usize,
     pub buddy: Buddy,
-    pub last_training_date: Option<DateTime<Local>>,
+    pub last_training_date: Option<Timestamp>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -251,7 +251,7 @@ impl Default for Buddy {
 }
 
 pub struct TrainingResult {
-    pub timestamp: DateTime<Local>,
+    pub timestamp: Timestamp,
     pub passed: bool,
     pub evaluation: Option<EvaluationScores>,
 }
@@ -309,6 +309,8 @@ pub struct EvaluationScores {
   - macOS: `~/Library/Application Support/yomitore/stats.json`
   - Windows: `%APPDATA%/yomitore/stats.json`
 - 形式: JSON（serde_json 使用）
+- 日時: `jiff::Timestamp` で記録時点を保持し、保存時はローカルオフセット付きの RFC 3339 形式を使う
+- 集計: 日次集計にはローカル日付を使用し、週次集計には経過時間の 168 時間を使用する
 - 保存: `save() -> Result<(), Box<dyn std::error::Error>>`
 - 読み込み: `load() -> Result<Self, Box<dyn std::error::Error>>`
   - 存在しない場合は新規作成
@@ -403,6 +405,7 @@ pub enum ViewMode {
     Menu,      // メニュー画面
     Settings,  // API キー設定画面
     Normal,    // トレーニング画面
+    Editing,   // 要約入力モード
     Report,    // レポート画面
     Help,      // ヘルプ画面
 }
@@ -415,7 +418,7 @@ pub struct App {
     pub evaluation_passed: bool,
     pub status_message: String,
     pub should_quit: bool,
-    pub text_area_state: TextAreaState,
+    pub summary_input: TextArea<'static>,
     pub show_evaluation_overlay: bool,
     pub evaluation_overlay_scroll: u16,
     pub view_mode: ViewMode,
@@ -547,8 +550,8 @@ dirs = "6.0"
 toml = "0.9"
 ratatui = { version = "0.30", features = ["crossterm", "unstable-rendered-line-info"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
-rat-text = "3.0"
-chrono = { version = "0.4", features = ["serde"] }
+ratatui-textarea = "0.9.4"
+jiff = { version = "1.0.1", features = ["serde"] }
 ```
 
 ## 8. テスト

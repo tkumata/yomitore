@@ -14,7 +14,7 @@ mod ui;
 
 use crate::{
     api_client::ApiClient,
-    app::App,
+    app::{App, SUMMARY_LINE_ENDING},
     config::ApiKeys,
     error::AppError,
     evaluation::{
@@ -142,7 +142,7 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
         app.fail_evaluation_request(&"Groq API キーを設定画面 (s) で設定してください。");
         return Ok(());
     };
-    let summary = app.text_area_state.value().clone();
+    let summary = app.summary_input.lines().join(SUMMARY_LINE_ENDING);
     let response = match jev_client
         .evaluate_with_jev(&app.original_text, &summary)
         .await

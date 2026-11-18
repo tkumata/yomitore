@@ -1,9 +1,37 @@
-use chrono::{DateTime, Local};
+use jiff::{Timestamp, tz::TimeZone};
 use serde::{Deserialize, Serialize};
+
+pub mod local_timestamp {
+    use super::{Serialize, TimeZone, Timestamp};
+    use serde::Serializer;
+    use std::fmt::Display;
+
+    fn display(timestamp: Timestamp) -> impl Display {
+        timestamp.display_with_offset(TimeZone::system().to_offset(timestamp))
+    }
+
+    pub fn serialize<S: Serializer>(
+        timestamp: &Timestamp,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(&display(*timestamp))
+    }
+
+    #[expect(clippy::ref_option, reason = "Serde passes a reference to the field")]
+    pub fn serialize_option<S: Serializer>(
+        timestamp: &Option<Timestamp>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        timestamp
+            .map(|value| display(value).to_string())
+            .serialize(serializer)
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrainingResult {
-    pub timestamp: DateTime<Local>,
+    #[serde(serialize_with = "local_timestamp::serialize")]
+    pub timestamp: Timestamp,
     pub passed: bool,
     #[serde(default)]
     pub evaluation: Option<EvaluationScores>,
@@ -18,7 +46,8 @@ pub enum BadgeType {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Badge {
     pub badge_type: BadgeType,
-    pub earned_at: DateTime<Local>,
+    #[serde(serialize_with = "local_timestamp::serialize")]
+    pub earned_at: Timestamp,
 }
 
 impl Badge {

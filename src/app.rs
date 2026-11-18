@@ -1,13 +1,14 @@
 use crate::api_client::ApiClient;
 use crate::stats::TrainingStats;
 use rand::RngExt;
-use rat_text::text_area::{TextAreaState, TextWrap};
-use ratatui::layout::Rect;
+use ratatui::{layout::Rect, style::Style};
+use ratatui_textarea::{TextArea, WrapMode};
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ViewMode {
     Menu,
     Normal,
+    Editing,
     Report,
     Help,
     Settings,
@@ -45,7 +46,7 @@ impl Default for SettingsState {
 
 pub const MENU_OPTIONS: [u16; 4] = [400, 720, 1440, 2880];
 pub const OVERLAY_SIZE_PERCENT: u16 = 75;
-pub const TEXT_WRAP_MARGIN: u16 = 2;
+pub const SUMMARY_LINE_ENDING: &str = if cfg!(windows) { "\r\n" } else { "\n" };
 pub const OVERLAY_MARGIN: u16 = 2;
 pub const MIN_OVERLAY_WIDTH: u16 = 40;
 pub const MIN_OVERLAY_HEIGHT: u16 = 10;
@@ -72,7 +73,7 @@ pub struct App {
     pub original_text_scroll: u16,
     pub evaluation_text: String,
     pub status_message: String,
-    pub text_area_state: TextAreaState,
+    pub summary_input: TextArea<'static>,
     pub evaluation_overlay_scroll: u16,
     pub view_mode: ViewMode,
     pub stats: TrainingStats,
@@ -91,8 +92,6 @@ impl Default for App {
     fn default() -> Self {
         let stats = TrainingStats::load().unwrap_or_default();
 
-        let text_area_state = Self::new_text_area_state();
-
         Self {
             api_client: None,
             jev_api_client: None,
@@ -100,7 +99,7 @@ impl Default for App {
             original_text_scroll: 0,
             evaluation_text: String::new(),
             status_message: STATUS_MENU.to_string(),
-            text_area_state,
+            summary_input: Self::new_summary_input(),
             evaluation_overlay_scroll: 0,
             view_mode: ViewMode::Menu,
             stats,
@@ -118,10 +117,13 @@ impl Default for App {
 }
 
 impl App {
-    pub fn new_text_area_state() -> TextAreaState {
-        let mut state = TextAreaState::default();
-        state.set_text_wrap(TextWrap::Word(TEXT_WRAP_MARGIN));
-        state
+    fn new_summary_input() -> TextArea<'static> {
+        let mut input = TextArea::default();
+        input.set_wrap_mode(WrapMode::WordOrGlyph);
+        input.set_cursor_line_style(Style::default());
+        input.set_cursor_style(Style::default());
+        input.set_tab_length(8);
+        input
     }
 
     pub fn generate_text_prompt(&self) -> String {
@@ -188,13 +190,12 @@ impl App {
     }
 
     pub fn begin_editing(&mut self) {
-        self.text_area_state.focus.set(true);
-        self.text_area_state.scroll_cursor_to_visible();
+        self.view_mode = ViewMode::Editing;
         self.status_message = STATUS_EDITING.to_string();
     }
 
     pub fn stop_editing(&mut self) {
-        self.text_area_state.focus.set(false);
+        self.view_mode = ViewMode::Normal;
         self.status_message = STATUS_NORMAL.to_string();
     }
 
@@ -250,7 +251,9 @@ impl App {
         self.show_evaluation_overlay = false;
         self.evaluation_text.clear();
         self.evaluation_passed = false;
-        self.text_area_state = Self::new_text_area_state();
+        let clipboard = self.summary_input.yank_text();
+        self.summary_input = Self::new_summary_input();
+        self.summary_input.set_yank_text(clipboard);
         self.original_text_scroll = 0;
         self.evaluation_overlay_scroll = 0;
         self.begin_training_generation(true);

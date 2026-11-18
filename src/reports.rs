@@ -1,6 +1,6 @@
 use crate::models::{DailyStats, WeeklyStats};
 use crate::stats::{TrainingStats, required_exp_for_level};
-use chrono::{Datelike, Local, NaiveDate};
+use jiff::{Span as DateSpan, Timestamp, civil::Date, tz::TimeZone};
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Paragraph},
@@ -45,7 +45,7 @@ const BUDDY_LEVEL_3_B: &str = r"
          (    )∫";
 
 fn get_buddy_ascii(level: u32) -> &'static str {
-    let frame = (Local::now().timestamp_millis() / 500) % 2;
+    let frame = (Timestamp::now().as_millisecond() / 500) % 2;
 
     let art = match (level, frame) {
         (1, 0) => BUDDY_LEVEL_1_A,
@@ -253,35 +253,32 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 }
 
 fn create_heatmap_without_badges(
-    daily_stats: &HashMap<NaiveDate, DailyStats>,
+    daily_stats: &HashMap<Date, DailyStats>,
     width: usize,
     height: usize,
 ) -> Text<'static> {
-    create_heatmap_for_date(daily_stats, width, height, Local::now().date_naive())
+    let today = TimeZone::system().to_datetime(Timestamp::now()).date();
+    create_heatmap_for_date(daily_stats, width, height, today)
 }
 
 fn create_heatmap_for_date(
-    daily_stats: &HashMap<NaiveDate, DailyStats>,
+    daily_stats: &HashMap<Date, DailyStats>,
     _width: usize,
     _height: usize,
-    today: NaiveDate,
+    today: Date,
 ) -> Text<'static> {
     let mut lines = Vec::new();
 
     let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
-    let start_date = today - chrono::Duration::days(start_offset);
+    let start_date = today - DateSpan::new().days(start_offset);
+    let leading_days = start_date.weekday().to_sunday_zero_offset();
+    let grid_start = start_date - DateSpan::new().days(leading_days);
+    let week_count = (REPORT_DAYS + usize::from(leading_days.unsigned_abs())).div_ceil(7);
 
-    let grid_start =
-        start_date - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
-    let days_in_grid = (today - grid_start).num_days() + 1;
-    let week_count = usize::try_from(days_in_grid)
-        .unwrap_or(REPORT_DAYS)
-        .div_ceil(7);
-
-    let week_starts: Vec<NaiveDate> = (0..week_count)
+    let week_starts: Vec<Date> = (0..week_count)
         .map(|week| {
             let day_offset = i64::try_from(week.saturating_mul(7)).unwrap_or(i64::MAX);
-            grid_start + chrono::Duration::days(day_offset)
+            grid_start + DateSpan::new().days(day_offset)
         })
         .collect();
 
@@ -300,7 +297,7 @@ fn create_heatmap_for_date(
         line_spans.push(Span::raw(format!("{weekday_label}{HEATMAP_LABEL_SUFFIX}")));
 
         for week_start in &week_starts {
-            let date = *week_start + chrono::Duration::days(i64::from(weekday_index));
+            let date = *week_start + DateSpan::new().days(weekday_index);
             if date < start_date || date > today {
                 line_spans.push(Span::raw(HEATMAP_EMPTY_CELL));
                 continue;
@@ -436,9 +433,8 @@ fn calculate_bar_height(value: usize, max_value: usize, max_len: usize) -> usize
 mod tests {
     use super::*;
 
-    fn date(year: i32, month: u32, day: u32) -> Result<NaiveDate, String> {
-        NaiveDate::from_ymd_opt(year, month, day)
-            .ok_or_else(|| format!("invalid test date: {year}-{month}-{day}"))
+    fn date(year: i16, month: i8, day: i8) -> Result<Date, String> {
+        Date::new(year, month, day).map_err(|error| error.to_string())
     }
 
     fn text_content(text: Text<'static>) -> Vec<String> {
@@ -451,18 +447,6 @@ mod tests {
                     .collect::<String>()
             })
             .collect()
-    }
-
-    fn expected_week_count(today: NaiveDate) -> usize {
-        let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
-        let start_date = today - chrono::Duration::days(start_offset);
-        let grid_start = start_date
-            - chrono::Duration::days(i64::from(start_date.weekday().num_days_from_sunday()));
-        let days_in_grid = (today - grid_start).num_days() + 1;
-
-        usize::try_from(days_in_grid)
-            .unwrap_or(REPORT_DAYS)
-            .div_ceil(7)
     }
 
     #[test]
@@ -537,7 +521,7 @@ mod tests {
                 .get("土 ".len()..)
                 .ok_or_else(|| format!("row was too short: {row}"))?;
             let cell_count = cells.chars().count();
-            let expected_cell_count = expected_week_count(today);
+            let expected_cell_count = 26;
             if cell_count != expected_cell_count {
                 return Err(format!(
                     "expected {expected_cell_count} week columns, got {cell_count}"
