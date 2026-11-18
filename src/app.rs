@@ -49,8 +49,6 @@ pub const TEXT_WRAP_MARGIN: u16 = 2;
 pub const OVERLAY_MARGIN: u16 = 2;
 pub const MIN_OVERLAY_WIDTH: u16 = 40;
 pub const MIN_OVERLAY_HEIGHT: u16 = 10;
-const HEADER_HEIGHT: u16 = 1;
-const STATUS_HEIGHT: u16 = 3;
 const BLOCK_BORDER_SIZE: u16 = 2;
 
 pub const INITIAL_ORIGINAL_TEXT: &str = "認証しています...";
@@ -295,17 +293,6 @@ impl App {
             width: overlay_width,
             height: overlay_height,
         }
-    }
-
-    pub fn original_text_viewport_size(&self) -> (u16, u16) {
-        let content_height = self
-            .terminal_height
-            .saturating_sub(HEADER_HEIGHT + STATUS_HEIGHT);
-        let pane_width = self.terminal_width / 2;
-        (
-            content_height.saturating_sub(BLOCK_BORDER_SIZE),
-            pane_width.saturating_sub(BLOCK_BORDER_SIZE),
-        )
     }
 
     pub fn evaluation_viewport_size(&self) -> (u16, u16) {

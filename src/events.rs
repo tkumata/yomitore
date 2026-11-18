@@ -199,11 +199,7 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
                     .saturating_add(1)
                     .min(max_scroll);
             } else {
-                let (visible_height, visible_width) = app.original_text_viewport_size();
-                let max_scroll =
-                    calculate_max_scroll(&app.original_text, visible_height, visible_width);
-                app.original_text_scroll =
-                    app.original_text_scroll.saturating_add(1).min(max_scroll);
+                app.original_text_scroll = app.original_text_scroll.saturating_add(1);
             }
         }
         KeyCode::Up | KeyCode::Char('k') => {
@@ -229,7 +225,38 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 
 #[cfg(test)]
 mod tests {
-    use super::calculate_max_scroll;
+    use super::{App, KeyCode, KeyModifiers, calculate_max_scroll, handle_normal_mode_events};
+    use ratatui::{Terminal, backend::TestBackend, crossterm::event::KeyEvent};
+
+    #[test]
+    fn original_text_keeps_wide_characters_inside_the_pane() {
+        let mut app = App::default();
+        let Ok(mut terminal) = Terminal::new(TestBackend::new(150, 49));
+        app.begin_training_generation(false);
+        app.apply_generated_text("始本文末".to_owned());
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+        assert_eq!(terminal.backend().buffer()[(1, 2)].symbol(), "始");
+        assert_eq!(terminal.backend().buffer()[(7, 2)].symbol(), "末");
+
+        let text = format!("始\n{}a {}末", "本文\n".repeat(41), "日".repeat(35));
+        app.apply_generated_text(text.clone());
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+
+        let screen = terminal.backend().buffer();
+        assert_eq!(app.original_text, text);
+        assert_eq!(screen[(1, 2)].symbol(), "始");
+        assert_eq!(screen[(74, 44)].symbol(), "│");
+        assert_ne!(screen[(73, 44)].symbol(), "末");
+
+        for _ in 0..2 {
+            let _ = handle_normal_mode_events(
+                &mut app,
+                KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            );
+            let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+            assert_eq!(terminal.backend().buffer()[(1, 44)].symbol(), "末");
+        }
+    }
 
     #[test]
     fn calculate_max_scroll_uses_inner_height_without_extra_border_adjustment() {

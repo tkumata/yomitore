@@ -4,6 +4,7 @@ use crate::reports;
 use rat_text::text_area::{TextArea, TextWrap};
 use rat_text::{HasScreenCursor, text_area::TextAreaState};
 use ratatui::{
+    buffer::CellWidth,
     prelude::*,
     style::Modifier,
     text::{Line, Span},
@@ -90,16 +91,44 @@ fn render_header(frame: &mut Frame, area: Rect) {
     frame.render_widget(title, area);
 }
 
-fn render_original_text(app: &App, frame: &mut Frame, area: Rect) {
+fn render_original_text(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title("原文 (↑/↓ or j/k: スクロール)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
-    let paragraph = Paragraph::new(app.original_text.as_str())
-        .wrap(Wrap { trim: false })
+    let inner = block.inner(area);
+    let lines = wrap_original_text(&app.original_text, inner.width);
+    let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
+    app.original_text_scroll = app
+        .original_text_scroll
+        .min(u16::try_from(max_scroll).unwrap_or(u16::MAX));
+    let paragraph = Paragraph::new(lines)
         .scroll((app.original_text_scroll, 0))
         .block(block);
     frame.render_widget(paragraph, area);
+}
+
+fn wrap_original_text(text: &str, width: u16) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    // Ratatui 0.30.2 can wrap a wide grapheme across the pane border.
+    for source_line in text.lines() {
+        let mut line = String::new();
+        let mut line_width = 0;
+        for grapheme in Span::raw(source_line).styled_graphemes(Style::default()) {
+            let grapheme_width = grapheme.symbol.cell_width();
+            if grapheme_width > width {
+                continue;
+            }
+            if grapheme_width > width - line_width {
+                lines.push(Line::raw(std::mem::take(&mut line)));
+                line_width = 0;
+            }
+            line.push_str(grapheme.symbol);
+            line_width += grapheme_width;
+        }
+        lines.push(Line::raw(line));
+    }
+    lines
 }
 
 fn render_summary_input(app: &mut App, frame: &mut Frame, area: Rect) {
