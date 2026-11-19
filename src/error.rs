@@ -11,11 +11,20 @@ pub enum AppError {
     #[error("API キーが無効です。")]
     InvalidApiKey,
 
+    #[error("HTTP クライアントを初期化できませんでした。")]
+    ApiClientInitialization,
+
+    #[error("API が HTTP {0} を返しました。")]
+    HttpStatus(reqwest::StatusCode),
+
     #[error("I/O エラー: {0}")]
     IoError(#[from] std::io::Error),
 
     #[error("API レスポンスに choices が含まれていません。")]
     NoChoicesInResponse,
+
+    #[error("API レスポンスの本文が空です。")]
+    EmptyChatContent,
 }
 
 #[cfg(test)]

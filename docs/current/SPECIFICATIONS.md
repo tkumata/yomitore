@@ -27,6 +27,7 @@
 - **`tui.rs`**: ターミナル初期化・終了処理。ターミナルサイズチェック
 - **`config.rs`**: API キーを環境変数または設定ファイルから読み込み、設定ファイルへ保存する
 - **`stats.rs`**: トレーニング統計の管理。バッジシステム、日次/週次集計
+- **`stats_store.rs`**: 成績履歴の読み込みと、保存時の排他・置き換え
 - **`reports.rs`**: レポート画面のレンダリング。統計の可視化
 - **`help.rs`**: ヘルプコンテンツの管理
 - **`error.rs`**: アプリケーション固有のエラー型（thiserror 使用）
@@ -119,7 +120,7 @@
 
 - **レスポンス処理**:
   - `choices[0].message.content` から生成文を抽出
-  - null の場合は空文字列を返す
+  - `content` が null または空白だけの場合は生成失敗として扱う。原文がない間は評価を送信できず、`n` で生成を再試行できる
   - エラー時は `AppError::ApiError` を返す
 
 ### 3.3. 要約入力機能 (main.rs, ui.rs)
@@ -311,10 +312,9 @@ pub struct EvaluationScores {
 - 形式: JSON（serde_json 使用）
 - 日時: `jiff::Timestamp` で記録時点を保持し、保存時はローカルオフセット付きの RFC 3339 形式を使う
 - 集計: 日次集計にはローカル日付を使用し、週次集計には経過時間の 168 時間を使用する
-- 保存: `save() -> Result<(), Box<dyn std::error::Error>>`
-- 読み込み: `load() -> Result<Self, Box<dyn std::error::Error>>`
-  - 存在しない場合は新規作成
-  - 読み込み後、`recalculate_streak()`と`rebuild_badges_from_history()`を実行
+- 保存時はロックを取得し、最新の履歴へ結果を1件追加する。一時ファイルへ書き込んで同期し、既存の履歴を置き換える
+- 履歴が存在しない場合は空の履歴で開始する。起動時に読み込めない履歴がある場合は、そのセッションの保存を停止する
+- 読み込み後に連続正解数、バディ、バッジの状態を更新する
 
 ### 3.8. テスト戦略 (evaluation.rs)
 
@@ -412,7 +412,7 @@ pub enum ViewMode {
 
 pub struct App {
     pub api_client: Option<ApiClient>,
-    pub original_text: String,
+    pub original_text: Option<String>,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
     pub evaluation_passed: bool,
@@ -472,14 +472,7 @@ pub enum AppError {
 
 1. **main 関数**: `Result<(), AppError>`を返し、最上位でエラーをキャッチ
 2. **API 通信**: タイムアウト時は`reqwest::Error`が発生し、`AppError::ApiError`に変換
-3. **統計保存失敗**: ユーザーに通知し、処理を継続
-
-   ```rust
-   if let Err(e) = app.stats.save() {
-       app.status_message = format!("Warning: Failed to save stats: {}", e);
-       eprintln!("Failed to save stats: {}", e);
-   }
-   ```
+3. **統計保存失敗**: ステータスバーに通知し、評価結果はメモリに保持する。`Ctrl+S` で同じ結果の保存を再試行できる
 
 4. **ターミナル復元**: Rust 1.100 の `DropGuard` を使用し、初期化途中の失敗、`?` による終了、panic の巻き戻し時にも `tui::restore()` を実行する。代替画面の解除と raw mode の解除は、片方が失敗しても両方を試みる。正常終了時は復元エラーを返し、異常終了時は元のエラーを維持して復元エラーを標準エラー出力へ通知する。panic の abort やプロセスの強制終了では復元を保証しない
 

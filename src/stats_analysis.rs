@@ -61,7 +61,7 @@ pub fn get_recent_evaluation_summary(
     let mut accuracy_scores = Vec::new();
 
     for result in results {
-        if zone.to_datetime(result.timestamp).date() < start_date {
+        if days == 0 || !(start_date..=today).contains(&zone.to_datetime(result.timestamp).date()) {
             continue;
         }
         if let Some(evaluation) = &result.evaluation {
@@ -79,13 +79,17 @@ pub fn get_recent_evaluation_summary(
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "f64 represents counts exactly up to 2^53"
+)]
 pub fn calculate_score_stats(scores: &[u8]) -> Option<EvaluationScoreStats> {
     if scores.is_empty() {
         return None;
     }
 
-    let sum: u16 = scores.iter().map(|&value| u16::from(value)).sum();
-    let average = f32::from(sum) / f32::from(u16::try_from(scores.len()).unwrap_or(u16::MAX));
+    let sum: f64 = scores.iter().map(|&value| f64::from(value)).sum();
+    let average = sum / scores.len() as f64;
     let median = calculate_median(scores);
 
     Some(EvaluationScoreStats { average, median })

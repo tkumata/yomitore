@@ -6,8 +6,6 @@ use crate::stats_analysis;
 use jiff::{SignedDuration, Timestamp, civil::Date, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 
 const BADGE_INTERVAL: usize = 5;
 const MAX_CONSECUTIVE_STREAK: usize = 50;
@@ -15,8 +13,6 @@ const MAX_CUMULATIVE_MILESTONE: usize = 100;
 const BUDDY_EXP_LEVEL2: u32 = 10;
 const BUDDY_EXP_DEFAULT: u32 = 5;
 const BUDDY_PENALTY_DELAY: SignedDuration = SignedDuration::from_hours(72);
-const APP_DIR_NAME: &str = "yomitore";
-const STATS_FILE_NAME: &str = "stats.json";
 
 pub fn required_exp_for_level(level: u32) -> u32 {
     if level == 2 {
@@ -40,33 +36,14 @@ pub struct TrainingStats {
 }
 
 impl TrainingStats {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let path = Self::get_stats_file_path()?;
-        if !path.exists() {
-            return Ok(Self::default());
-        }
-        let content = fs::read_to_string(&path)?;
-        let mut stats: TrainingStats = serde_json::from_str(&content)?;
-
-        stats.recalculate_streak();
-        stats.check_buddy_penalty(Timestamp::now());
-        stats.rebuild_badges_from_history();
-
-        Ok(stats)
-    }
-
-    pub fn save(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let path = Self::get_stats_file_path()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let content = serde_json::to_string_pretty(self)?;
-        fs::write(&path, content)?;
-        Ok(())
+    pub fn restore_derived_state(&mut self, now: Timestamp) {
+        self.recalculate_streak();
+        self.check_buddy_penalty(now);
+        self.rebuild_badges_from_history();
     }
 
     fn award_badges_for_progress(
-        &mut self,
+        badges: &mut Vec<Badge>,
         current_streak: usize,
         total_correct: usize,
         earned_at: Timestamp,
@@ -77,8 +54,8 @@ impl TrainingStats {
                 badge_type: BadgeType::ConsecutiveStreak(current_streak),
                 earned_at,
             };
-            if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                self.badges.push(badge);
+            if !badges.iter().any(|b| b.badge_type == badge.badge_type) {
+                badges.push(badge);
             }
         }
 
@@ -88,8 +65,8 @@ impl TrainingStats {
                 badge_type: BadgeType::CumulativeMilestone(total_correct),
                 earned_at,
             };
-            if !self.badges.iter().any(|b| b.badge_type == badge.badge_type) {
-                self.badges.push(badge);
+            if !badges.iter().any(|b| b.badge_type == badge.badge_type) {
+                badges.push(badge);
             }
         }
     }
@@ -134,15 +111,15 @@ impl TrainingStats {
             self.add_buddy_exp();
             self.current_streak += 1;
             let total_correct = self.results.iter().filter(|r| r.passed).count();
-            self.award_badges_for_progress(self.current_streak, total_correct, now);
+            Self::award_badges_for_progress(
+                &mut self.badges,
+                self.current_streak,
+                total_correct,
+                now,
+            );
         } else {
             self.current_streak = 0;
         }
-    }
-
-    fn get_stats_file_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let config_dir = dirs::config_dir().ok_or("設定ディレクトリが見つかりません。")?;
-        Ok(config_dir.join(APP_DIR_NAME).join(STATS_FILE_NAME))
     }
 
     fn recalculate_streak(&mut self) {
@@ -158,26 +135,33 @@ impl TrainingStats {
         let mut current_streak: usize = 0;
         let mut total_correct: usize = 0;
 
-        let results = self.results.clone();
-        for result in results {
+        for result in &self.results {
             if result.passed {
                 current_streak += 1;
                 total_correct += 1;
-                self.award_badges_for_progress(current_streak, total_correct, result.timestamp);
+                Self::award_badges_for_progress(
+                    &mut self.badges,
+                    current_streak,
+                    total_correct,
+                    result.timestamp,
+                );
             } else {
                 current_streak = 0;
             }
         }
     }
 
-    pub fn get_daily_stats(&self, days: usize) -> HashMap<Date, DailyStats> {
-        let zone = TimeZone::system();
-        let today = zone.to_datetime(Timestamp::now()).date();
-        stats_analysis::calculate_daily_stats(&self.results, days, today, &zone)
+    pub fn get_daily_stats(
+        &self,
+        days: usize,
+        today: Date,
+        zone: &TimeZone,
+    ) -> HashMap<Date, DailyStats> {
+        stats_analysis::calculate_daily_stats(&self.results, days, today, zone)
     }
 
-    pub fn get_weekly_stats(&self, weeks: usize) -> Vec<WeeklyStats> {
-        stats_analysis::calculate_weekly_stats(&self.results, weeks, Timestamp::now())
+    pub fn get_weekly_stats(&self, weeks: usize, now: Timestamp) -> Vec<WeeklyStats> {
+        stats_analysis::calculate_weekly_stats(&self.results, weeks, now)
     }
 
     pub fn get_badges_by_type(&self) -> (Vec<&Badge>, Vec<&Badge>) {
@@ -196,10 +180,13 @@ impl TrainingStats {
         (consecutive, cumulative)
     }
 
-    pub fn get_recent_evaluation_summary(&self, days: usize) -> EvaluationSummary {
-        let zone = TimeZone::system();
-        let today = zone.to_datetime(Timestamp::now()).date();
-        stats_analysis::get_recent_evaluation_summary(&self.results, days, today, &zone)
+    pub fn get_recent_evaluation_summary(
+        &self,
+        days: usize,
+        today: Date,
+        zone: &TimeZone,
+    ) -> EvaluationSummary {
+        stats_analysis::get_recent_evaluation_summary(&self.results, days, today, zone)
     }
 }
 
@@ -533,6 +520,10 @@ mod tests {
         };
         stats.results.push(TrainingResult {
             timestamp: earlier,
+            ..result.clone()
+        });
+        stats.results.push(TrainingResult {
+            timestamp: now + SignedDuration::from_hours(24),
             ..result
         });
         let summary =
@@ -541,19 +532,19 @@ mod tests {
         let importance = summary.importance.as_ref().map(|s| (s.average, s.median));
         assert!(importance.is_some());
         let importance = importance.unwrap_or((0.0, 0.0));
-        assert!((importance.0 - 4.0).abs() < f32::EPSILON);
+        assert!((importance.0 - 4.0).abs() < f64::EPSILON);
         assert!((importance.1 - 4.0).abs() < f32::EPSILON);
 
         let conciseness = summary.conciseness.as_ref().map(|s| (s.average, s.median));
         assert!(conciseness.is_some());
         let conciseness = conciseness.unwrap_or((0.0, 0.0));
-        assert!((conciseness.0 - 2.5).abs() < f32::EPSILON);
+        assert!((conciseness.0 - 2.5).abs() < f64::EPSILON);
         assert!((conciseness.1 - 2.5).abs() < f32::EPSILON);
 
         let accuracy = summary.accuracy.as_ref().map(|s| (s.average, s.median));
         assert!(accuracy.is_some());
         let accuracy = accuracy.unwrap_or((0.0, 0.0));
-        assert!((accuracy.0 - 4.0).abs() < f32::EPSILON);
+        assert!((accuracy.0 - 4.0).abs() < f64::EPSILON);
         assert!((accuracy.1 - 4.0).abs() < f32::EPSILON);
     }
 
@@ -568,6 +559,16 @@ mod tests {
     #[test]
     fn test_calculate_score_stats_handles_empty() {
         assert!(calculate_score_stats(&[]).is_none());
+    }
+
+    #[test]
+    fn average_keeps_large_sums_and_counts() {
+        for count in [13_108, 65_536] {
+            let Some(stats) = calculate_score_stats(&vec![5; count]) else {
+                unreachable!("fixture contains scores");
+            };
+            assert!((stats.average - 5.0).abs() < f64::EPSILON);
+        }
     }
 
     #[test]

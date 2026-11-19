@@ -96,7 +96,7 @@ pub struct EvaluationScores {
 
 #[derive(Clone, Debug)]
 pub struct EvaluationScoreStats {
-    pub average: f32,
+    pub average: f64,
     pub median: f32,
 }
 

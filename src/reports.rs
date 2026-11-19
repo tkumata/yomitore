@@ -99,8 +99,12 @@ fn render_badge_section(stats: &TrainingStats) -> Vec<Line<'static>> {
     lines
 }
 
-fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
-    let summary = stats.get_recent_evaluation_summary(REPORT_DAYS);
+fn render_evaluation_summary(
+    stats: &TrainingStats,
+    today: Date,
+    zone: &TimeZone,
+) -> Vec<Line<'static>> {
+    let summary = stats.get_recent_evaluation_summary(REPORT_DAYS, today, zone);
     let mut lines = Vec::new();
 
     lines.push(Line::from(Span::styled(
@@ -142,6 +146,9 @@ fn render_evaluation_summary(stats: &TrainingStats) -> Vec<Line<'static>> {
 }
 
 pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
+    let now = Timestamp::now();
+    let zone = TimeZone::system();
+    let today = zone.to_datetime(now).date();
     let block = Block::default()
         .title("レポート (r: 閉じる)")
         .borders(Borders::ALL)
@@ -200,14 +207,14 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         return;
     };
 
-    let daily_stats = stats.get_daily_stats(REPORT_DAYS);
+    let daily_stats = stats.get_daily_stats(REPORT_DAYS, today, &zone);
     let monthly_block = Block::default()
         .title("180日 (過去180日)")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Green));
     let monthly_inner = monthly_block.inner(*monthly_area);
     frame.render_widget(monthly_block, *monthly_area);
-    if monthly_inner.height >= 6 {
+    let heatmap_area = if monthly_inner.height >= 6 {
         let monthly_layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Length(6), Constraint::Min(0)])
@@ -215,28 +222,18 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         let [summary_area, heatmap_area] = monthly_layout.as_ref() else {
             return;
         };
-        let summary_text = Text::from(render_evaluation_summary(stats));
+        let summary_text = Text::from(render_evaluation_summary(stats, today, &zone));
         let summary_paragraph = Paragraph::new(summary_text);
         frame.render_widget(summary_paragraph, *summary_area);
 
-        let heatmap = create_heatmap_without_badges(
-            &daily_stats,
-            usize::from(heatmap_area.width),
-            usize::from(heatmap_area.height),
-        );
-        let paragraph = Paragraph::new(heatmap);
-        frame.render_widget(paragraph, *heatmap_area);
+        *heatmap_area
     } else {
-        let heatmap = create_heatmap_without_badges(
-            &daily_stats,
-            usize::from(monthly_inner.width),
-            usize::from(monthly_inner.height),
-        );
-        let paragraph = Paragraph::new(heatmap);
-        frame.render_widget(paragraph, monthly_inner);
-    }
+        monthly_inner
+    };
+    let heatmap = create_heatmap_for_date(&daily_stats, today);
+    frame.render_widget(Paragraph::new(heatmap), heatmap_area);
 
-    let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW);
+    let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW, now);
     let weekly_block = Block::default()
         .title("週次 (過去4週)")
         .borders(Borders::ALL)
@@ -252,21 +249,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     frame.render_widget(paragraph, weekly_inner);
 }
 
-fn create_heatmap_without_badges(
-    daily_stats: &HashMap<Date, DailyStats>,
-    width: usize,
-    height: usize,
-) -> Text<'static> {
-    let today = TimeZone::system().to_datetime(Timestamp::now()).date();
-    create_heatmap_for_date(daily_stats, width, height, today)
-}
-
-fn create_heatmap_for_date(
-    daily_stats: &HashMap<Date, DailyStats>,
-    _width: usize,
-    _height: usize,
-    today: Date,
-) -> Text<'static> {
+fn create_heatmap_for_date(daily_stats: &HashMap<Date, DailyStats>, today: Date) -> Text<'static> {
     let mut lines = Vec::new();
 
     let start_offset = i64::try_from(REPORT_DAYS.saturating_sub(1)).unwrap_or(i64::MAX);
@@ -452,7 +435,7 @@ mod tests {
     #[test]
     fn heatmap_uses_weekdays_as_rows_from_saturday_to_sunday() -> Result<(), String> {
         let today = date(2026, 7, 2)?;
-        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), today));
 
         let weekday_rows = lines
             .get(0..7)
@@ -484,8 +467,7 @@ mod tests {
             },
         );
 
-        let rendered =
-            text_content(create_heatmap_for_date(&daily_stats, 80, 12, today)).join("\n");
+        let rendered = text_content(create_heatmap_for_date(&daily_stats, today)).join("\n");
 
         if !rendered.contains(HEATMAP_CELL) {
             return Err("heatmap did not contain unicode block cells".to_string());
@@ -502,7 +484,7 @@ mod tests {
     #[test]
     fn heatmap_uses_compact_week_columns_without_header() -> Result<(), String> {
         let today = date(2026, 7, 2)?;
-        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), today));
         let first_line = lines
             .first()
             .ok_or_else(|| "heatmap did not render any rows".to_string())?;
@@ -537,7 +519,7 @@ mod tests {
     #[test]
     fn heatmap_marks_out_of_range_cells_as_empty() -> Result<(), String> {
         let today = date(2026, 7, 2)?;
-        let lines = text_content(create_heatmap_for_date(&HashMap::new(), 80, 12, today));
+        let lines = text_content(create_heatmap_for_date(&HashMap::new(), today));
         let saturday_row = lines
             .first()
             .ok_or_else(|| "heatmap did not render saturday row".to_string())?;

@@ -214,11 +214,11 @@ fn invalid(field: &'static str, part: &str) -> ParseEvaluationError {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use serde_json::json;
 
-    fn response() -> Value {
+    pub(crate) fn response() -> Value {
         json!({"answers": {
             "appropriate": {"type":"noul", "noul":0.5},
             "importance": {"type":"score", "score":0.5, "legend":{"0":"a","1":"b","2":"c","3":"d","4":"e"}, "probabilities":{"0":0.5,"1":0.5,"2":0.0,"3":0.0,"4":0.0}, "confidence":0.8},

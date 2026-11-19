@@ -1,5 +1,5 @@
 use crate::api_client::ApiClient;
-use crate::stats::TrainingStats;
+use crate::{models::EvaluationScores, stats::TrainingStats};
 use rand::RngExt;
 use ratatui::{layout::Rect, style::Style};
 use ratatui_textarea::{TextArea, WrapMode};
@@ -52,8 +52,7 @@ pub const MIN_OVERLAY_WIDTH: u16 = 40;
 pub const MIN_OVERLAY_HEIGHT: u16 = 10;
 const BLOCK_BORDER_SIZE: u16 = 2;
 
-pub const INITIAL_ORIGINAL_TEXT: &str = "認証しています...";
-pub const GENERATION_ERROR_PREFIX: &str = "文章生成に失敗しました: ";
+const GENERATION_ERROR_PREFIX: &str = "文章生成に失敗しました: ";
 pub const STATUS_MENU: &str = "文字数を選び、開始してください。";
 pub const STATUS_NORMAL: &str = "通常モードです。'i' で入力します。";
 pub const STATUS_EDITING: &str = "入力モードです。Esc で戻ります。";
@@ -61,6 +60,7 @@ pub const STATUS_REPORT: &str = "レポート表示中です。'r' で閉じま�
 pub const STATUS_HELP: &str = "ヘルプ表示中です。'h' で閉じます。";
 pub const STATUS_GENERATING: &str = "文章を生成しています...";
 pub const STATUS_NEXT_GENERATING: &str = "次の文章を生成しています...";
+const STATUS_GENERATION_FAILED: &str = "文章を生成できませんでした。'n' で再試行します。";
 pub const STATUS_EVALUATING: &str = "要約を評価しています...";
 pub const STATUS_EVALUATED: &str = "評価が完了しました。'e' で切替、'n' で次へ進みます。";
 pub const STATUS_INVALID_EVALUATION: &str = "評価結果の形式が不正です。";
@@ -69,7 +69,8 @@ pub const STATUS_RUNTIME_ERROR: &str = "エラーが発生しました。";
 pub struct App {
     pub api_client: Option<ApiClient>,
     pub jev_api_client: Option<ApiClient>,
-    pub original_text: String,
+    pub original_text: Option<String>,
+    pub generation_error: Option<String>,
     pub original_text_scroll: u16,
     pub evaluation_text: String,
     pub status_message: String,
@@ -77,6 +78,8 @@ pub struct App {
     pub evaluation_overlay_scroll: u16,
     pub view_mode: ViewMode,
     pub stats: TrainingStats,
+    pub stats_load_error: Option<String>,
+    pub pending_evaluation: Option<EvaluationScores>,
     pub character_count: u16,
     pub selected_menu_item: usize,
     pub help_scroll: u16,
@@ -90,19 +93,20 @@ pub struct App {
 
 impl Default for App {
     fn default() -> Self {
-        let stats = TrainingStats::load().unwrap_or_default();
-
         Self {
             api_client: None,
             jev_api_client: None,
-            original_text: INITIAL_ORIGINAL_TEXT.to_string(),
+            original_text: None,
+            generation_error: None,
             original_text_scroll: 0,
             evaluation_text: String::new(),
             status_message: STATUS_MENU.to_string(),
             summary_input: Self::new_summary_input(),
             evaluation_overlay_scroll: 0,
             view_mode: ViewMode::Menu,
-            stats,
+            stats: TrainingStats::default(),
+            stats_load_error: None,
+            pending_evaluation: None,
             character_count: 400,
             selected_menu_item: 0,
             help_scroll: 0,
@@ -142,15 +146,15 @@ impl App {
         .repeat(2)
     }
 
-    pub fn has_training_started(&self) -> bool {
-        self.original_text != INITIAL_ORIGINAL_TEXT
-            && !self.original_text.starts_with(GENERATION_ERROR_PREFIX)
-    }
-
     pub fn return_from_aux_view(&mut self) {
-        if self.has_training_started() {
+        if self.original_text.is_some() || self.generation_error.is_some() {
             self.view_mode = ViewMode::Normal;
-            self.status_message = STATUS_NORMAL.to_string();
+            self.status_message = if self.generation_error.is_some() {
+                STATUS_GENERATION_FAILED
+            } else {
+                STATUS_NORMAL
+            }
+            .to_string();
         } else {
             self.view_mode = ViewMode::Menu;
             self.status_message = STATUS_MENU.to_string();
@@ -200,6 +204,8 @@ impl App {
     }
 
     pub fn begin_training_generation(&mut self, is_next_training: bool) {
+        self.original_text = None;
+        self.generation_error = None;
         self.view_mode = ViewMode::Normal;
         self.status_message = if is_next_training {
             STATUS_NEXT_GENERATING
@@ -210,13 +216,15 @@ impl App {
     }
 
     pub fn apply_generated_text(&mut self, text: String) {
-        self.original_text = text;
+        self.original_text = Some(text);
+        self.generation_error = None;
         self.status_message = STATUS_NORMAL.to_string();
     }
 
     pub fn apply_generation_error(&mut self, error: &dyn std::fmt::Display) {
-        self.original_text = format!("{GENERATION_ERROR_PREFIX}{error}");
-        self.status_message = STATUS_RUNTIME_ERROR.to_string();
+        self.original_text = None;
+        self.generation_error = Some(format!("{GENERATION_ERROR_PREFIX}{error}"));
+        self.status_message = STATUS_GENERATION_FAILED.to_string();
     }
 
     pub fn begin_evaluation(&mut self) {

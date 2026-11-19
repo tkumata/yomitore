@@ -89,7 +89,12 @@ fn render_original_text(app: &mut App, frame: &mut Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
     let inner = block.inner(area);
-    let lines = wrap_original_text(&app.original_text, inner.width);
+    let text = app
+        .original_text
+        .as_deref()
+        .or(app.generation_error.as_deref())
+        .unwrap_or("原文を生成しています...");
+    let lines = wrap_original_text(text, inner.width);
     let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
     app.original_text_scroll = app
         .original_text_scroll
@@ -253,7 +258,16 @@ fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     };
     let status_text =
         format!(" {status_message} | r: レポート | h: ヘルプ{settings_hint} | q: 終了 ");
-    let paragraph = Paragraph::new(status_text)
+    let mut lines = vec![Line::from(status_text)];
+    if let Some(error) = &app.stats_load_error {
+        lines.push(Line::from(error.as_str()).style(Style::default().fg(Color::Yellow)));
+    } else if app.pending_evaluation.is_some() {
+        lines.push(
+            Line::from("成績は未保存です。Ctrl+S で保存を再試行します。")
+                .style(Style::default().fg(Color::Yellow)),
+        );
+    }
+    let paragraph = Paragraph::new(lines)
         .alignment(Alignment::Right)
         .block(block);
     frame.render_widget(paragraph, area);
