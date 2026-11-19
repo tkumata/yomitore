@@ -43,13 +43,18 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(api_key: String) -> Self {
-        let client = reqwest::Client::builder()
+    pub fn http_client() -> Result<reqwest::Client, AppError> {
+        reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(API_TIMEOUT_SECS))
             .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .map_err(|_| AppError::ApiClientInitialization)
+    }
 
-        Self { client, api_key }
+    pub fn new(client: &reqwest::Client, api_key: String) -> Self {
+        Self {
+            client: client.clone(),
+            api_key,
+        }
     }
 
     pub async fn validate_credentials(&self) -> Result<(), AppError> {
@@ -61,11 +66,7 @@ impl ApiClient {
             .send()
             .await?;
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(AppError::InvalidApiKey);
-        }
-        response.error_for_status()?;
-        Ok(())
+        check_status(response.status())
     }
 
     async fn send_chat_request(&self, prompt: &str) -> Result<String, AppError> {
@@ -87,23 +88,11 @@ impl ApiClient {
             .send()
             .await?;
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(AppError::InvalidApiKey);
-        }
-        if !response.status().is_success() {
-            let Err(err) = response.error_for_status() else {
-                unreachable!("response status was already checked as unsuccessful");
-            };
-            return Err(AppError::ApiError(err));
-        }
+        check_status(response.status())?;
 
         let chat_response: ChatResponse = response.json().await?;
 
-        if let Some(choice) = chat_response.choices.into_iter().next() {
-            Ok(choice.message.content.unwrap_or_default())
-        } else {
-            Err(AppError::NoChoicesInResponse)
-        }
+        chat_response.into_content()
     }
 
     pub async fn generate_text(&self, prompt: &str) -> Result<String, AppError> {
@@ -179,10 +168,65 @@ impl ApiClient {
             .json(&body)
             .send()
             .await?;
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(AppError::InvalidApiKey);
-        }
-        let response = response.error_for_status()?;
+        check_status(response.status())?;
         Ok(response.json().await?)
+    }
+}
+
+fn check_status(status: reqwest::StatusCode) -> Result<(), AppError> {
+    match status {
+        reqwest::StatusCode::UNAUTHORIZED => Err(AppError::InvalidApiKey),
+        status if status.is_success() => Ok(()),
+        status => Err(AppError::HttpStatus(status)),
+    }
+}
+
+impl ChatResponse {
+    fn into_content(self) -> Result<String, AppError> {
+        let choice = self
+            .choices
+            .into_iter()
+            .next()
+            .ok_or(AppError::NoChoicesInResponse)?;
+        choice
+            .message
+            .content
+            .filter(|content| !content.trim().is_empty())
+            .ok_or(AppError::EmptyChatContent)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::StatusCode;
+
+    #[test]
+    fn rejects_empty_chat_content() {
+        for content in [Value::Null, json!(""), json!(" \n\t")] {
+            let Ok(response) = serde_json::from_value::<ChatResponse>(
+                json!({"choices": [{"message": {"content": content}}]}),
+            ) else {
+                unreachable!("invalid chat response fixture");
+            };
+            assert!(matches!(
+                response.into_content(),
+                Err(AppError::EmptyChatContent)
+            ));
+        }
+    }
+
+    #[test]
+    fn maps_unsuccessful_http_statuses_to_errors() {
+        assert!(check_status(StatusCode::OK).is_ok());
+        assert!(matches!(
+            check_status(StatusCode::UNAUTHORIZED),
+            Err(AppError::InvalidApiKey)
+        ));
+        for status in [StatusCode::FOUND, StatusCode::BAD_GATEWAY] {
+            assert!(
+                matches!(check_status(status), Err(AppError::HttpStatus(actual)) if actual == status)
+            );
+        }
     }
 }

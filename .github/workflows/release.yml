@@ -5,108 +5,116 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   check-version:
     runs-on: ubuntu-latest
     outputs:
-      version_changed: ${{ steps.check_version.outputs.changed }}
-      version: ${{ steps.get_version.outputs.version }}
+      version: ${{ steps.release.outputs.version }}
+      published: ${{ steps.release.outputs.published }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Get version from Cargo.toml
-        id: get_version
-        run: |
-          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          echo "version=v${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: Check if version tag exists
-        id: check_version
-        run: |
-          VERSION="${{ steps.get_version.outputs.version }}"
-          if git rev-parse "$VERSION" >/dev/null 2>&1; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-            echo "Tag $VERSION already exists. Skipping release."
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Tag $VERSION does not exist. Proceeding with release."
-          fi
-
-  create-release:
-    needs: check-version
-    if: needs.check-version.outputs.version_changed == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Check for a published release
+        id: release
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ needs.check-version.outputs.version }}
-          release_name: Release ${{ needs.check-version.outputs.version }}
-          draft: false
-          prerelease: false
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^version = "\([^"]*\)"$/v\1/p' Cargo.toml)
+          test -n "$version"
+          published=$(gh api --paginate --slurp 'repos/{owner}/{repo}/releases?per_page=100' |
+            jq --arg version "$version" 'any(.[][]; .tag_name == $version and .draft == false)')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: [check-version, create-release]
-    if: needs.check-version.outputs.version_changed == 'true'
+    needs: check-version
+    if: needs.check-version.outputs.published == 'false'
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: yomitore
-            asset_name: yomitore-linux-x86_64
+            asset: yomitore-linux-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: yomitore
-            asset_name: yomitore-macos-aarch64
-
+            asset: yomitore-macos-aarch64
     runs-on: ${{ matrix.os }}
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: ${{ matrix.target }}
-          override: true
-
-      - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release --target ${{ matrix.target }}
-
-      - name: Prepare binary
-        run: |
-          cd target/${{ matrix.target }}/release
-          strip ${{ matrix.artifact_name }} || true
-          tar czf ${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET: ${{ matrix.target }}
+        run: rustup toolchain install stable --profile minimal --target "$TARGET"
+
+      - name: Build and package
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: ${{ matrix.asset }}
+        run: |
+          cargo +stable build --release --locked --target "$TARGET"
+          tar -czf "$ASSET.tar.gz" -C "target/$TARGET/release" yomitore
+
+      - uses: actions/upload-artifact@v7
         with:
-          upload_url: ${{ needs.create-release.outputs.upload_url }}
-          asset_path: ./target/${{ matrix.target }}/release/${{ matrix.asset_name }}.tar.gz
-          asset_name: ${{ matrix.asset_name }}.tar.gz
-          asset_content_type: application/gzip
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    needs: [check-version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ needs.check-version.outputs.version }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: yomitore-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach both assets and publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check-version.outputs.version }}
+        run: |
+          state=$(gh api --paginate --slurp 'repos/{owner}/{repo}/releases?per_page=100' |
+            jq -r --arg version "$VERSION" '
+              [.[][] | select(.tag_name == $version)] |
+              if any(.[]; .draft == false) then "published"
+              elif length > 0 then "draft"
+              else "missing" end')
+          if [[ "$state" == published ]]; then
+            exit 0
+          fi
+
+          linux=dist/yomitore-linux-x86_64.tar.gz
+          macos=dist/yomitore-macos-aarch64.tar.gz
+          test -s "$linux"
+          test -s "$macos"
+
+          tag_refs=$(git ls-remote origin "refs/tags/$VERSION" "refs/tags/$VERSION^{}")
+          tag_commit=$(awk 'END {print $1}' <<< "$tag_refs")
+          if [[ -n "$tag_commit" && "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "Tag $VERSION points to a different commit." >&2
+            exit 1
+          fi
+
+          if [[ "$state" == missing ]]; then
+            gh release create "$VERSION" --target "$GITHUB_SHA" --title "Release $VERSION" --notes "" --draft
+          fi
+          gh release upload "$VERSION" "$linux" "$macos" --clobber
+          gh release edit "$VERSION" --target "$GITHUB_SHA" --draft=false

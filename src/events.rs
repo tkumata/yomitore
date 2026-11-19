@@ -14,6 +14,7 @@ pub enum AppAction {
     NextTraining,
     StartTraining,
     SaveSettings,
+    RetrySave,
 }
 
 pub fn handle_events(app: &mut App) -> Result<Option<AppAction>, AppError> {
@@ -111,11 +112,12 @@ fn handle_settings_events(app: &mut App, key: event::KeyEvent) -> Option<AppActi
 
 fn handle_editing_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
     if key.code == KeyCode::Char('s') && key.modifiers.contains(KeyModifiers::CONTROL) {
-        if app
-            .summary_input
-            .lines()
-            .iter()
-            .any(|line| !line.trim().is_empty())
+        if app.original_text.is_some()
+            && app
+                .summary_input
+                .lines()
+                .iter()
+                .any(|line| !line.trim().is_empty())
         {
             app.stop_editing();
             return Some(AppAction::Evaluate);
@@ -419,7 +421,10 @@ fn handle_help_events(app: &mut App, key: event::KeyEvent) {
 fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
     match key.code {
         KeyCode::Char('i') | KeyCode::Enter => {
-            if !app.show_evaluation_overlay {
+            if app.original_text.is_some()
+                && app.pending_evaluation.is_none()
+                && !app.show_evaluation_overlay
+            {
                 app.begin_editing();
             }
         }
@@ -432,13 +437,20 @@ fn handle_normal_mode_events(app: &mut App, key: event::KeyEvent) -> Option<AppA
             }
         }
         KeyCode::Char('n') => {
-            if app.show_evaluation_overlay {
+            if app.pending_evaluation.is_none()
+                && (app.show_evaluation_overlay || app.generation_error.is_some())
+            {
                 app.show_evaluation_overlay = false;
                 return Some(AppAction::NextTraining);
             }
         }
         KeyCode::Char('r') => {
             app.enter_report_view();
+        }
+        KeyCode::Char('s') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if app.pending_evaluation.is_some() {
+                return Some(AppAction::RetrySave);
+            }
         }
         KeyCode::Char('s') => app.enter_settings_view(app.settings.groq_from_env),
         KeyCode::Char('h') => {
@@ -494,6 +506,35 @@ mod tests {
         crossterm::event::KeyEvent,
     };
     use ratatui_textarea::TextArea;
+
+    #[test]
+    fn generation_failure_disables_submission_and_allows_retry() {
+        let mut app = App::default();
+        let next = KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE);
+        let edit = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        let submit = KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL);
+        for next_question in [false, true] {
+            app.begin_training_generation(next_question);
+            app.apply_generation_error(&"通信エラー");
+            app.summary_input.insert_str("要約");
+            assert!(handle_normal_mode_events(&mut app, edit).is_none());
+            assert!(app.view_mode == ViewMode::Normal);
+            assert!(handle_editing_events(&mut app, submit).is_none());
+            assert!(matches!(
+                handle_normal_mode_events(&mut app, next),
+                Some(AppAction::NextTraining)
+            ));
+
+            app.prepare_next_training();
+            app.apply_generated_text("原文".to_owned());
+            handle_normal_mode_events(&mut app, edit);
+            app.summary_input.insert_str("要約");
+            assert!(matches!(
+                handle_editing_events(&mut app, submit),
+                Some(AppAction::Evaluate)
+            ));
+        }
+    }
 
     #[test]
     fn summary_input_wraps_and_keeps_edits_in_a_narrow_terminal() {
@@ -625,7 +666,7 @@ mod tests {
         let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
 
         let screen = terminal.backend().buffer();
-        assert_eq!(app.original_text, text);
+        assert_eq!(app.original_text.as_deref(), Some(text.as_str()));
         assert_eq!(screen[(1, 2)].symbol(), "始");
         assert_eq!(screen[(74, 44)].symbol(), "│");
         assert_ne!(screen[(73, 44)].symbol(), "末");

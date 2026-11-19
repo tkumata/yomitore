@@ -172,10 +172,7 @@ mod tests {
 
     impl TemporaryDirectory {
         fn new() -> std::io::Result<Self> {
-            let nonce = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
+            let nonce = rand::random::<u64>();
             let path = std::env::temp_dir().join(format!(
                 "yomitore-config-test-{}-{nonce}",
                 std::process::id()
