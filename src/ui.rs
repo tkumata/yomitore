@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsField, ViewMode};
+use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsFocus, ViewMode};
 use crate::help;
 use crate::reports;
 use ratatui::{
@@ -86,8 +86,7 @@ fn render_header(frame: &mut Frame, area: Rect) {
 fn render_original_text(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
         .title("原文 (↑/↓ or j/k: スクロール)")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+        .borders(Borders::ALL);
     let inner = block.inner(area);
     let text = app
         .original_text
@@ -134,7 +133,7 @@ fn render_summary_input(app: &App, frame: &mut Frame, area: Rect) {
     let border_style = if app.view_mode == ViewMode::Editing {
         Style::default().fg(Color::Cyan)
     } else {
-        Style::default().fg(Color::Blue)
+        Style::default()
     };
 
     let block = Block::default()
@@ -344,8 +343,7 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     let block = Block::default()
         .title("文字数を選択してください")
         .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .borders(Borders::ALL);
 
     let menu_lines = build_menu_lines(app.selected_menu_item);
 
@@ -359,56 +357,90 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
 }
 
 fn render_settings_view(app: &App, frame: &mut Frame) {
+    let settings = &app.settings;
     let block = Block::default()
         .title("API キー設定")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .padding(Padding::new(2, 2, 1, 1));
     let inner = block.inner(frame.area());
     frame.render_widget(block, frame.area());
-    let groq = "•".repeat(app.settings.groq_input.chars().count());
-    let jev = "•".repeat(app.settings.jev_input.chars().count());
-    let groq_selected = app.settings.field == SettingsField::Groq;
-    let jev_selected = app.settings.field == SettingsField::Jev;
-    let groq_state = if app.settings.groq_from_env {
+    if inner.is_empty() {
+        return;
+    }
+
+    let groq_state = if settings.groq_from_env {
         "GROQ_API_KEY 環境変数を使用中"
-    } else if app.settings.groq_saved {
+    } else if settings.groq_saved {
         "保存済み"
     } else {
         "未設定"
     };
-    let jev_state = if app.settings.jev_saved {
+    let jev_state = if settings.jev_saved {
         "保存済み"
     } else {
         "未設定"
     };
-    let lines = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            format!(
-                "{} Groq API キー ({groq_state})",
-                if groq_selected { ">" } else { " " }
-            ),
-            Style::default().fg(Color::Yellow),
-        )),
-        Line::from(format!("  {groq}")),
-        Line::from("  空欄のままなら現在の値を保持します。"),
-        Line::from(""),
-        Line::from(Span::styled(
-            format!(
-                "{} Jev API キー ({jev_state})",
-                if jev_selected { ">" } else { " " }
-            ),
-            Style::default().fg(Color::Yellow),
-        )),
-        Line::from(format!("  {jev}")),
-        Line::from(""),
-        Line::from("Enter: 次へ/保存 | Esc: キャンセル"),
-        Line::from(app.status_message.as_str()),
+    let fields = [
+        (
+            SettingsFocus::Groq,
+            "Groq",
+            groq_state,
+            &settings.groq_input,
+            settings.groq_saved,
+        ),
+        (
+            SettingsFocus::Jev,
+            "Jev",
+            jev_state,
+            &settings.jev_input,
+            settings.jev_saved,
+        ),
     ];
-    frame.render_widget(
-        Paragraph::new(lines).block(Block::default().padding(Padding::new(2, 2, 1, 1))),
-        inner,
-    );
+    let mut lines = Vec::new();
+    for (focus, service, state, input, saved) in fields {
+        lines.push(Line::from(Span::styled(
+            format!("{service} API キー: ({state})"),
+            Style::default().fg(Color::Yellow),
+        )));
+        let focused = settings.focus == focus;
+        let length = input.chars().count();
+        if focused
+            && let Ok(row) = u16::try_from(lines.len())
+            && row < inner.height
+        {
+            let column = u16::try_from(length)
+                .unwrap_or(u16::MAX)
+                .min(inner.width - 1);
+            frame.set_cursor_position((inner.x + column, inner.y + row));
+        }
+        let mask = if input.is_empty() && saved {
+            "********".to_owned()
+        } else {
+            let width = inner.width - u16::from(focused);
+            "*".repeat(length.min(usize::from(width)))
+        };
+        lines.push(Line::from(mask));
+        lines.push(Line::default());
+    }
+
+    let button = |label, focus| {
+        let mut style = Style::default().add_modifier(Modifier::REVERSED);
+        if settings.focus == focus {
+            style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+        }
+        Span::styled(label, style)
+    };
+    lines.extend([
+        Line::from(vec![
+            button(" Save ", SettingsFocus::Save),
+            Span::raw(" "),
+            button(" Cancel ", SettingsFocus::Cancel),
+        ]),
+        Line::from("Tab / Shift+Tab: 移動 | Enter: 次へ・実行 | Esc: キャンセル"),
+        Line::from("空欄のまま保存すると、現在のキーを保持します。"),
+        Line::from(app.status_message.as_str()),
+    ]);
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_help_view(app: &App, frame: &mut Frame) {
@@ -435,8 +467,7 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     let block = Block::default()
         .title("ヘルプ (↑/↓ or j/k: スクロール, h: 閉じる)")
         .title_alignment(Alignment::Center)
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
+        .borders(Borders::ALL);
 
     let paragraph = Paragraph::new(help_text)
         .block(block)

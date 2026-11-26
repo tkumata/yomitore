@@ -1,4 +1,4 @@
-use crate::app::{App, MENU_OPTIONS, SettingsField, ViewMode};
+use crate::app::{App, MENU_OPTIONS, SettingsFocus, ViewMode};
 use crate::error::AppError;
 use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -84,28 +84,39 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
 }
 
 fn handle_settings_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> {
-    let field = app.settings.field;
+    use SettingsFocus::{Cancel, Groq, Jev, Save};
+
+    let focus = app.settings.focus;
     match key.code {
-        KeyCode::Esc => {
-            app.return_from_settings();
+        KeyCode::Esc => app.return_from_settings(),
+        KeyCode::Enter if focus == Save => return Some(AppAction::SaveSettings),
+        KeyCode::Enter if focus == Cancel => app.return_from_settings(),
+        KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab => {
+            let backwards = key.code == KeyCode::BackTab
+                || (key.code == KeyCode::Tab && key.modifiers.contains(KeyModifiers::SHIFT));
+            app.settings.focus = match (focus, backwards) {
+                (Groq, false) | (Save, true) => Jev,
+                (Jev, false) | (Cancel, true) => Save,
+                (Save, false) | (Groq, true) => Cancel,
+                (Cancel, false) | (Jev, true) => Groq,
+            };
         }
-        KeyCode::Enter if field == SettingsField::Groq => {
-            app.settings.field = SettingsField::Jev;
+        _ => {
+            let input = match focus {
+                Groq => &mut app.settings.groq_input,
+                Jev => &mut app.settings.jev_input,
+                Save | Cancel => return None,
+            };
+            match key.code {
+                KeyCode::Backspace => {
+                    input.pop();
+                }
+                KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                    input.push(ch);
+                }
+                _ => {}
+            }
         }
-        KeyCode::Enter => return Some(AppAction::SaveSettings),
-        KeyCode::Backspace => match field {
-            SettingsField::Groq => {
-                app.settings.groq_input.pop();
-            }
-            SettingsField::Jev => {
-                app.settings.jev_input.pop();
-            }
-        },
-        KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => match field {
-            SettingsField::Groq => app.settings.groq_input.push(ch),
-            SettingsField::Jev => app.settings.jev_input.push(ch),
-        },
-        _ => {}
     }
     None
 }
@@ -496,16 +507,81 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 #[cfg(test)]
 mod tests {
     use super::{
-        App, AppAction, KeyCode, KeyModifiers, ViewMode, calculate_max_scroll,
-        handle_editing_events, handle_normal_mode_events, handle_summary_key,
+        App, AppAction, KeyCode, KeyModifiers, SettingsFocus, ViewMode, calculate_max_scroll,
+        handle_editing_events, handle_normal_mode_events, handle_settings_events,
+        handle_summary_key,
     };
     use crate::app::SUMMARY_LINE_ENDING;
     use ratatui::{
         Terminal,
         backend::{Backend, TestBackend},
         crossterm::event::KeyEvent,
+        style::Modifier,
     };
     use ratatui_textarea::TextArea;
+
+    #[test]
+    fn settings_form_masks_input_and_routes_save_and_cancel() {
+        let mut app = App::default();
+        app.settings.groq_saved = true;
+        app.enter_settings_view(false);
+        let Ok(mut terminal) = Terminal::new(TestBackend::new(100, 30));
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let enter = key(KeyCode::Enter);
+
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+        assert!(terminal.backend().cursor_visible());
+        assert_eq!(terminal.backend().cursor_position(), (3, 3).into());
+        let screen = terminal.backend().buffer();
+        assert!((3..11).all(|column| screen[(column, 3)].symbol() == "*"));
+        assert_eq!(screen[(11, 3)].symbol(), " ");
+        assert_eq!(screen[(3, 6)].symbol(), " ");
+
+        handle_settings_events(&mut app, key(KeyCode::Char('a')));
+        handle_settings_events(&mut app, key(KeyCode::Char('日')));
+        handle_settings_events(&mut app, key(KeyCode::Backspace));
+        assert_eq!(app.settings.groq_input, "a");
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+        assert_eq!(terminal.backend().cursor_position(), (4, 3).into());
+        assert_eq!(terminal.backend().buffer()[(3, 3)].symbol(), "*");
+        assert_eq!(terminal.backend().buffer()[(4, 3)].symbol(), " ");
+
+        handle_settings_events(&mut app, key(KeyCode::Tab));
+        assert!(app.settings.focus == SettingsFocus::Jev);
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+        assert_eq!(terminal.backend().cursor_position(), (3, 6).into());
+        assert!(handle_settings_events(&mut app, enter).is_none());
+        let Ok(_) = terminal.draw(|frame| crate::ui::render(&mut app, frame));
+        assert!(!terminal.backend().cursor_visible());
+        let screen = terminal.backend().buffer();
+        assert!(
+            screen[(3, 8)]
+                .modifier
+                .contains(Modifier::REVERSED | Modifier::UNDERLINED)
+        );
+        assert_eq!(screen[(10, 8)].modifier, Modifier::REVERSED);
+        assert!(matches!(
+            handle_settings_events(&mut app, enter),
+            Some(AppAction::SaveSettings)
+        ));
+
+        let back_tab = KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT);
+        handle_settings_events(&mut app, back_tab);
+        assert!(app.settings.focus == SettingsFocus::Jev);
+        handle_settings_events(&mut app, back_tab);
+        assert!(app.settings.focus == SettingsFocus::Groq);
+        handle_settings_events(&mut app, back_tab);
+        assert!(app.settings.focus == SettingsFocus::Cancel);
+        assert!(handle_settings_events(&mut app, enter).is_none());
+        assert!(app.view_mode == ViewMode::Menu);
+        assert_eq!(app.settings.groq_input, "");
+
+        app.enter_settings_view(false);
+        handle_settings_events(&mut app, key(KeyCode::Char('b')));
+        assert!(handle_settings_events(&mut app, key(KeyCode::Esc)).is_none());
+        assert!(app.view_mode == ViewMode::Menu);
+        assert_eq!(app.settings.groq_input, "");
+    }
 
     #[test]
     fn generation_failure_disables_submission_and_allows_retry() {

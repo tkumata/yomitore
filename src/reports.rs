@@ -149,10 +149,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let now = Timestamp::now();
     let zone = TimeZone::system();
     let today = zone.to_datetime(now).date();
-    let block = Block::default()
-        .title("レポート (r: 閉じる)")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+    let block = Block::default().title("レポート (r: 閉じる)");
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -173,10 +170,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
         return;
     };
 
-    let badge_block = Block::default()
-        .title("バッジ")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Yellow));
+    let badge_block = Block::default().title("バッジ").borders(Borders::ALL);
     let badge_inner = badge_block.inner(*badge_area);
     frame.render_widget(badge_block, *badge_area);
     let badge_content = Text::from(render_badge_section(stats));
@@ -185,8 +179,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 
     let buddy_block = Block::default()
         .title(format!("バディ (レベル {})", stats.buddy.level))
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::LightBlue));
+        .borders(Borders::ALL);
     let buddy_inner = buddy_block.inner(*buddy_area);
     frame.render_widget(buddy_block, *buddy_area);
 
@@ -210,8 +203,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let daily_stats = stats.get_daily_stats(REPORT_DAYS, today, &zone);
     let monthly_block = Block::default()
         .title("180日 (過去180日)")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
+        .borders(Borders::ALL);
     let monthly_inner = monthly_block.inner(*monthly_area);
     frame.render_widget(monthly_block, *monthly_area);
     let heatmap_area = if monthly_inner.height >= 6 {
@@ -236,8 +228,7 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
     let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW, now);
     let weekly_block = Block::default()
         .title("週次 (過去4週)")
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Magenta));
+        .borders(Borders::ALL);
     let weekly_inner = weekly_block.inner(*weekly_area);
     frame.render_widget(weekly_block, *weekly_area);
     let chart = create_bar_chart_without_badges(
@@ -265,17 +256,9 @@ fn create_heatmap_for_date(daily_stats: &HashMap<Date, DailyStats>, today: Date)
         })
         .collect();
 
-    let weekdays = [
-        ("土", 6_u32),
-        ("金", 5_u32),
-        ("木", 4_u32),
-        ("水", 3_u32),
-        ("火", 2_u32),
-        ("月", 1_u32),
-        ("日", 0_u32),
-    ];
+    let weekdays = ["日", "月", "火", "水", "木", "金", "土"];
 
-    for (weekday_label, weekday_index) in weekdays {
+    for (weekday_index, weekday_label) in (0..).zip(weekdays) {
         let mut line_spans = Vec::new();
         line_spans.push(Span::raw(format!("{weekday_label}{HEATMAP_LABEL_SUFFIX}")));
 
@@ -433,9 +416,39 @@ mod tests {
     }
 
     #[test]
-    fn heatmap_uses_weekdays_as_rows_from_saturday_to_sunday() -> Result<(), String> {
+    fn heatmap_uses_weekdays_as_rows_from_sunday_to_saturday() -> Result<(), String> {
         let today = date(2026, 7, 2)?;
-        let lines = text_content(create_heatmap_for_date(&HashMap::new(), today));
+        let sunday = date(2026, 6, 28)?;
+        let daily_stats = HashMap::from([
+            (
+                sunday,
+                DailyStats {
+                    correct: 0,
+                    incorrect: 1,
+                },
+            ),
+            (
+                today,
+                DailyStats {
+                    correct: 1,
+                    incorrect: 0,
+                },
+            ),
+        ]);
+        let heatmap = create_heatmap_for_date(&daily_stats, today);
+        let last_cell_color = |row: usize| {
+            heatmap
+                .lines
+                .get(row)
+                .and_then(|line| line.spans.last())
+                .and_then(|span| span.style.fg)
+        };
+        if last_cell_color(0) != Some(Color::Red)
+            || last_cell_color(4) != Some(Color::Rgb(0, 255, 0))
+        {
+            return Err("Sunday and Thursday data should stay on their corresponding rows".into());
+        }
+        let lines = text_content(heatmap);
 
         let weekday_rows = lines
             .get(0..7)
@@ -449,7 +462,7 @@ mod tests {
             })
             .collect::<Result<String, String>>()?;
 
-        if weekday_labels != "土金木水火月日" {
+        if weekday_labels != "日月火水木金土" {
             return Err(format!("unexpected weekday labels: {weekday_labels}"));
         }
         Ok(())
@@ -500,7 +513,7 @@ mod tests {
             .ok_or_else(|| "heatmap did not render all weekday rows".to_string())?;
         for row in weekday_rows {
             let cells = row
-                .get("土 ".len()..)
+                .get("日 ".len()..)
                 .ok_or_else(|| format!("row was too short: {row}"))?;
             let cell_count = cells.chars().count();
             let expected_cell_count = 26;
@@ -521,10 +534,10 @@ mod tests {
         let today = date(2026, 7, 2)?;
         let lines = text_content(create_heatmap_for_date(&HashMap::new(), today));
         let saturday_row = lines
-            .first()
+            .get(6)
             .ok_or_else(|| "heatmap did not render saturday row".to_string())?;
         let friday_row = lines
-            .get(1)
+            .get(5)
             .ok_or_else(|| "heatmap did not render friday row".to_string())?;
 
         if !saturday_row.ends_with(HEATMAP_EMPTY_CELL) {
