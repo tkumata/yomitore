@@ -15,13 +15,15 @@ pub enum ViewMode {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum SettingsField {
+pub enum SettingsFocus {
     Groq,
     Jev,
+    Save,
+    Cancel,
 }
 
 pub struct SettingsState {
-    pub field: SettingsField,
+    pub focus: SettingsFocus,
     pub groq_input: String,
     pub jev_input: String,
     pub groq_from_env: bool,
@@ -33,7 +35,7 @@ pub struct SettingsState {
 impl Default for SettingsState {
     fn default() -> Self {
         Self {
-            field: SettingsField::Groq,
+            focus: SettingsFocus::Groq,
             groq_input: String::new(),
             jev_input: String::new(),
             groq_from_env: false,
@@ -174,7 +176,7 @@ impl App {
     pub fn enter_settings_view(&mut self, groq_from_env: bool) {
         self.settings.return_mode = self.view_mode;
         self.view_mode = ViewMode::Settings;
-        self.settings.field = SettingsField::Groq;
+        self.settings.focus = SettingsFocus::Groq;
         self.settings.groq_input.clear();
         self.settings.jev_input.clear();
         self.settings.groq_from_env = groq_from_env;
