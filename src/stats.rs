@@ -1,6 +1,7 @@
+use crate::evaluation::Outcome;
 use crate::models::{
-    Badge, BadgeType, Buddy, DailyStats, EvaluationScores, EvaluationSummary, TrainingResult,
-    WeeklyStats, local_timestamp,
+    Badge, BadgeType, Buddy, DailyStats, EvaluationScores, EvaluationVersion, RecordedOutcome,
+    TrainingResult, WeeklyStats, local_timestamp,
 };
 use crate::stats_analysis;
 use jiff::{SignedDuration, Timestamp, civil::Date, tz::TimeZone};
@@ -94,31 +95,41 @@ impl TrainingStats {
         }
     }
 
-    pub fn add_result_with_evaluation(
-        &mut self,
-        passed: bool,
-        evaluation: Option<EvaluationScores>,
-    ) {
-        let now = Timestamp::now();
-        self.results.push(TrainingResult {
-            timestamp: now,
-            passed,
+    pub fn add_evaluation(&mut self, evaluation: EvaluationScores) {
+        self.add_result(RecordedOutcome::Weighted {
+            evaluation_version: EvaluationVersion::V2,
             evaluation,
         });
+    }
+
+    fn add_result(&mut self, outcome: RecordedOutcome) {
+        let now = Timestamp::now();
+        let result = TrainingResult {
+            timestamp: now,
+            outcome,
+        };
+        let outcome = result.outcome();
+        self.results.push(result);
         self.last_training_date = Some(now);
 
-        if passed {
-            self.add_buddy_exp();
-            self.current_streak += 1;
-            let total_correct = self.results.iter().filter(|r| r.passed).count();
-            Self::award_badges_for_progress(
-                &mut self.badges,
-                self.current_streak,
-                total_correct,
-                now,
-            );
-        } else {
-            self.current_streak = 0;
+        match outcome {
+            Outcome::Pass => {
+                self.add_buddy_exp();
+                self.current_streak += 1;
+                let total_correct = self
+                    .results
+                    .iter()
+                    .filter(|result| result.outcome() == Outcome::Pass)
+                    .count();
+                Self::award_badges_for_progress(
+                    &mut self.badges,
+                    self.current_streak,
+                    total_correct,
+                    now,
+                );
+            }
+            Outcome::Fail => self.current_streak = 0,
+            Outcome::Review => {}
         }
     }
 
@@ -127,7 +138,9 @@ impl TrainingStats {
             .results
             .iter()
             .rev()
-            .take_while(|result| result.passed)
+            .map(TrainingResult::outcome)
+            .filter(|outcome| *outcome != Outcome::Review)
+            .take_while(|outcome| *outcome == Outcome::Pass)
             .count();
     }
 
@@ -136,17 +149,19 @@ impl TrainingStats {
         let mut total_correct: usize = 0;
 
         for result in &self.results {
-            if result.passed {
-                current_streak += 1;
-                total_correct += 1;
-                Self::award_badges_for_progress(
-                    &mut self.badges,
-                    current_streak,
-                    total_correct,
-                    result.timestamp,
-                );
-            } else {
-                current_streak = 0;
+            match result.outcome() {
+                Outcome::Pass => {
+                    current_streak += 1;
+                    total_correct += 1;
+                    Self::award_badges_for_progress(
+                        &mut self.badges,
+                        current_streak,
+                        total_correct,
+                        result.timestamp,
+                    );
+                }
+                Outcome::Fail => current_streak = 0,
+                Outcome::Review => {}
             }
         }
     }
@@ -179,20 +194,22 @@ impl TrainingStats {
 
         (consecutive, cumulative)
     }
-
-    pub fn get_recent_evaluation_summary(
-        &self,
-        days: usize,
-        today: Date,
-        zone: &TimeZone,
-    ) -> EvaluationSummary {
-        stats_analysis::get_recent_evaluation_summary(&self.results, days, today, zone)
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{LegacyEvaluationScores, LegacyOutcome};
+
+    fn legacy_result(timestamp: Timestamp, passed: bool) -> TrainingResult {
+        TrainingResult {
+            timestamp,
+            outcome: RecordedOutcome::Legacy(LegacyOutcome {
+                passed,
+                evaluation: None,
+            }),
+        }
+    }
     use crate::stats_analysis::{
         calculate_daily_stats, calculate_median, calculate_score_stats, calculate_weekly_stats,
     };
@@ -219,10 +236,14 @@ mod tests {
             .map_err(|error| error.to_string())
             .map(|stats| {
                 stats.results.first().map(|result| {
-                    result
-                        .evaluation
-                        .as_ref()
-                        .map(|evaluation| evaluation.total_score)
+                    if let RecordedOutcome::Legacy(legacy) = &result.outcome {
+                        legacy
+                            .evaluation
+                            .as_ref()
+                            .map(|evaluation| evaluation.total_score)
+                    } else {
+                        None
+                    }
                 })
             });
 
@@ -303,7 +324,10 @@ mod tests {
         let mut stats = TrainingStats::default();
 
         for _ in 0..5 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
 
         let (consecutive, cumulative) = stats.get_badges_by_type();
@@ -311,7 +335,10 @@ mod tests {
         assert_eq!(cumulative.len(), 1);
 
         for _ in 0..5 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
 
         let (consecutive, cumulative) = stats.get_badges_by_type();
@@ -324,12 +351,18 @@ mod tests {
         let mut stats = TrainingStats::default();
 
         for _ in 0..5 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
 
         assert_eq!(stats.current_streak, 5);
 
-        stats.add_result_with_evaluation(false, None);
+        stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+            passed: false,
+            evaluation: None,
+        }));
 
         assert_eq!(stats.current_streak, 0);
 
@@ -342,7 +375,10 @@ mod tests {
         let mut stats = TrainingStats::default();
 
         for _ in 0..10 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
 
         stats.badges.clear();
@@ -364,25 +400,13 @@ mod tests {
             unreachable!("invalid timestamp fixture");
         };
 
-        stats.results.push(TrainingResult {
-            timestamp: now,
-            passed: true,
-            evaluation: None,
-        });
-        stats.results.push(TrainingResult {
-            timestamp: now,
-            passed: false,
-            evaluation: None,
-        });
+        stats.results.push(legacy_result(now, true));
+        stats.results.push(legacy_result(now, false));
 
         let Ok(yesterday) = "2026-07-02T14:59:59Z".parse() else {
             unreachable!("invalid timestamp fixture");
         };
-        stats.results.push(TrainingResult {
-            timestamp: yesterday,
-            passed: true,
-            evaluation: None,
-        });
+        stats.results.push(legacy_result(yesterday, true));
 
         let daily_stats = calculate_daily_stats(&stats.results, 7, today, &zone);
 
@@ -404,29 +428,17 @@ mod tests {
         let mut stats = TrainingStats::default();
         let now = Timestamp::now();
 
-        stats.results.push(TrainingResult {
-            timestamp: now,
-            passed: true,
-            evaluation: None,
-        });
+        stats.results.push(legacy_result(now, true));
 
         let last_week = now - SignedDuration::from_hours(168);
-        stats.results.push(TrainingResult {
-            timestamp: last_week,
-            passed: false,
-            evaluation: None,
-        });
-        stats.results.push(TrainingResult {
-            timestamp: last_week,
-            passed: false,
-            evaluation: None,
-        });
+        stats.results.push(legacy_result(last_week, false));
+        stats.results.push(legacy_result(last_week, false));
 
         let weekly_stats = calculate_weekly_stats(&stats.results, 4, now);
 
         let counts: Vec<_> = weekly_stats
             .iter()
-            .map(|week| (week.week_number, week.correct, week.incorrect))
+            .map(|week| (week.week_number, week.counts.correct, week.counts.incorrect))
             .collect();
         assert_eq!(counts, [(1, 0, 0), (2, 0, 0), (3, 0, 2), (4, 1, 0)]);
     }
@@ -434,11 +446,7 @@ mod tests {
     #[test]
     fn weekly_stats_for_zero_weeks_are_empty() {
         let now = Timestamp::now();
-        let results = [TrainingResult {
-            timestamp: now,
-            passed: true,
-            evaluation: None,
-        }];
+        let results = [legacy_result(now, true)];
         assert!(calculate_weekly_stats(&results, 0, now).is_empty());
     }
 
@@ -459,15 +467,11 @@ mod tests {
             (end - SignedDuration::from_nanos(1), true),
             (end, false),
         ]
-        .map(|(timestamp, passed)| TrainingResult {
-            timestamp,
-            passed,
-            evaluation: None,
-        });
+        .map(|(timestamp, passed)| legacy_result(timestamp, passed));
 
         let counts: Vec<_> = calculate_weekly_stats(&results, 2, now)
             .iter()
-            .map(|week| (week.week_number, week.correct, week.incorrect))
+            .map(|week| (week.week_number, week.counts.correct, week.counts.incorrect))
             .collect();
         assert_eq!(counts, [(1, 1, 1), (2, 1, 1)]);
     }
@@ -486,32 +490,36 @@ mod tests {
 
         stats.results.push(TrainingResult {
             timestamp: now,
-            passed: true,
-            evaluation: Some(EvaluationScores {
-                appropriate: true,
-                importance: 5,
-                conciseness: 3,
-                accuracy: 4,
-                improvement1: "なし".to_string(),
-                improvement2: "なし".to_string(),
-                improvement3: "なし".to_string(),
-                overall_passed: true,
-                total_score: Some(80),
+            outcome: RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: Some(LegacyEvaluationScores {
+                    appropriate: true,
+                    importance: 5,
+                    conciseness: 3,
+                    accuracy: 4,
+                    improvement1: "なし".to_string(),
+                    improvement2: "なし".to_string(),
+                    improvement3: "なし".to_string(),
+                    overall_passed: true,
+                    total_score: Some(80),
+                }),
             }),
         });
         stats.results.push(TrainingResult {
             timestamp: now,
-            passed: false,
-            evaluation: Some(EvaluationScores {
-                appropriate: false,
-                importance: 3,
-                conciseness: 2,
-                accuracy: 4,
-                improvement1: "不足".to_string(),
-                improvement2: "冗長".to_string(),
-                improvement3: "不正確".to_string(),
-                overall_passed: false,
-                total_score: None,
+            outcome: RecordedOutcome::Legacy(LegacyOutcome {
+                passed: false,
+                evaluation: Some(LegacyEvaluationScores {
+                    appropriate: false,
+                    importance: 3,
+                    conciseness: 2,
+                    accuracy: 4,
+                    improvement1: "不足".to_string(),
+                    improvement2: "冗長".to_string(),
+                    improvement3: "不正確".to_string(),
+                    overall_passed: false,
+                    total_score: None,
+                }),
             }),
         });
 
@@ -526,45 +534,58 @@ mod tests {
             timestamp: now + SignedDuration::from_hours(24),
             ..result
         });
-        let summary =
-            stats_analysis::get_recent_evaluation_summary(&stats.results, 1, today, &zone);
+        let (summary, weighted) =
+            stats_analysis::get_recent_evaluation_summaries(&stats.results, 1, today, &zone);
+        assert_eq!(weighted.count, 0);
         assert_eq!(summary.count, 2);
-        let importance = summary.importance.as_ref().map(|s| (s.average, s.median));
+        let importance = summary
+            .scores
+            .first()
+            .and_then(Option::as_ref)
+            .map(|s| (s.average, s.median));
         assert!(importance.is_some());
         let importance = importance.unwrap_or((0.0, 0.0));
         assert!((importance.0 - 4.0).abs() < f64::EPSILON);
-        assert!((importance.1 - 4.0).abs() < f32::EPSILON);
+        assert!((importance.1 - 4.0).abs() < f64::EPSILON);
 
-        let conciseness = summary.conciseness.as_ref().map(|s| (s.average, s.median));
+        let conciseness = summary
+            .scores
+            .get(1)
+            .and_then(Option::as_ref)
+            .map(|s| (s.average, s.median));
         assert!(conciseness.is_some());
         let conciseness = conciseness.unwrap_or((0.0, 0.0));
         assert!((conciseness.0 - 2.5).abs() < f64::EPSILON);
-        assert!((conciseness.1 - 2.5).abs() < f32::EPSILON);
+        assert!((conciseness.1 - 2.5).abs() < f64::EPSILON);
 
-        let accuracy = summary.accuracy.as_ref().map(|s| (s.average, s.median));
+        let accuracy = summary
+            .scores
+            .get(2)
+            .and_then(Option::as_ref)
+            .map(|s| (s.average, s.median));
         assert!(accuracy.is_some());
         let accuracy = accuracy.unwrap_or((0.0, 0.0));
         assert!((accuracy.0 - 4.0).abs() < f64::EPSILON);
-        assert!((accuracy.1 - 4.0).abs() < f32::EPSILON);
+        assert!((accuracy.1 - 4.0).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_calculate_median_edge_cases() {
-        assert!((calculate_median(&[5]) - 5.0).abs() < f32::EPSILON);
-        assert!((calculate_median(&[1, 5]) - 3.0).abs() < f32::EPSILON);
-        assert!((calculate_median(&[10, 2, 5]) - 5.0).abs() < f32::EPSILON);
-        assert!((calculate_median(&[1, 2, 3, 4]) - 2.5).abs() < f32::EPSILON);
+        assert!((calculate_median(&mut [5.0]) - 5.0).abs() < f64::EPSILON);
+        assert!((calculate_median(&mut [1.0, 5.0]) - 3.0).abs() < f64::EPSILON);
+        assert!((calculate_median(&mut [10.0, 2.0, 5.0]) - 5.0).abs() < f64::EPSILON);
+        assert!((calculate_median(&mut [1.0, 2.0, 3.0, 4.0]) - 2.5).abs() < f64::EPSILON);
     }
 
     #[test]
     fn test_calculate_score_stats_handles_empty() {
-        assert!(calculate_score_stats(&[]).is_none());
+        assert!(calculate_score_stats(Vec::new()).is_none());
     }
 
     #[test]
     fn average_keeps_large_sums_and_counts() {
         for count in [13_108, 65_536] {
-            let Some(stats) = calculate_score_stats(&vec![5; count]) else {
+            let Some(stats) = calculate_score_stats(vec![5.0; count]) else {
                 unreachable!("fixture contains scores");
             };
             assert!((stats.average - 5.0).abs() < f64::EPSILON);
@@ -579,25 +600,13 @@ mod tests {
         assert_eq!(stats.current_streak, 0);
 
         for _ in 0..3 {
-            stats.results.push(TrainingResult {
-                timestamp: Timestamp::now(),
-                passed: true,
-                evaluation: None,
-            });
+            stats.results.push(legacy_result(Timestamp::now(), true));
         }
         stats.recalculate_streak();
         assert_eq!(stats.current_streak, 3);
 
-        stats.results.push(TrainingResult {
-            timestamp: Timestamp::now(),
-            passed: false,
-            evaluation: None,
-        });
-        stats.results.push(TrainingResult {
-            timestamp: Timestamp::now(),
-            passed: true,
-            evaluation: None,
-        });
+        stats.results.push(legacy_result(Timestamp::now(), false));
+        stats.results.push(legacy_result(Timestamp::now(), true));
         stats.recalculate_streak();
         assert_eq!(stats.current_streak, 1);
     }
@@ -624,28 +633,43 @@ mod tests {
         assert_eq!(stats.buddy.exp, 0);
 
         for _ in 0..5 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
         assert_eq!(stats.buddy.level, 2);
         assert_eq!(stats.buddy.exp, 0);
 
         for _ in 0..9 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
         assert_eq!(stats.buddy.level, 2);
         assert_eq!(stats.buddy.exp, 9);
 
-        stats.add_result_with_evaluation(true, None);
+        stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+            passed: true,
+            evaluation: None,
+        }));
         assert_eq!(stats.buddy.level, 3);
         assert_eq!(stats.buddy.exp, 0);
 
         for _ in 0..4 {
-            stats.add_result_with_evaluation(true, None);
+            stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+                passed: true,
+                evaluation: None,
+            }));
         }
         assert_eq!(stats.buddy.level, 3);
         assert_eq!(stats.buddy.exp, 4);
 
-        stats.add_result_with_evaluation(false, None);
+        stats.add_result(RecordedOutcome::Legacy(LegacyOutcome {
+            passed: false,
+            evaluation: None,
+        }));
         assert_eq!(stats.buddy.exp, 4);
     }
 

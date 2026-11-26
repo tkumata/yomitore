@@ -1,4 +1,4 @@
-use crate::api_client::ApiClient;
+use crate::{api_client::ApiClient, evaluation::Outcome};
 use crate::{models::EvaluationScores, stats::TrainingStats};
 use rand::RngExt;
 use ratatui::{layout::Rect, style::Style};
@@ -86,7 +86,7 @@ pub struct App {
     pub selected_menu_item: usize,
     pub help_scroll: u16,
     pub should_quit: bool,
-    pub evaluation_passed: bool,
+    pub evaluation_outcome: Option<Outcome>,
     pub show_evaluation_overlay: bool,
     pub terminal_width: u16,
     pub terminal_height: u16,
@@ -113,7 +113,7 @@ impl Default for App {
             selected_menu_item: 0,
             help_scroll: 0,
             should_quit: false,
-            evaluation_passed: false,
+            evaluation_outcome: None,
             show_evaluation_overlay: false,
             terminal_width: 100,
             terminal_height: 30,
@@ -233,9 +233,9 @@ impl App {
         self.status_message = STATUS_EVALUATING.to_string();
     }
 
-    pub fn finish_evaluation(&mut self, text: String, passed: bool) {
+    pub fn finish_evaluation(&mut self, text: String, outcome: Outcome) {
         self.evaluation_text = text;
-        self.evaluation_passed = passed;
+        self.evaluation_outcome = Some(outcome);
         self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
         self.status_message = STATUS_EVALUATED.to_string();
@@ -243,7 +243,7 @@ impl App {
 
     pub fn fail_evaluation_format(&mut self) {
         self.evaluation_text = STATUS_INVALID_EVALUATION.to_string();
-        self.evaluation_passed = false;
+        self.evaluation_outcome = None;
         self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
         self.status_message = STATUS_INVALID_EVALUATION.to_string();
@@ -251,7 +251,7 @@ impl App {
 
     pub fn fail_evaluation_request(&mut self, error: &dyn std::fmt::Display) {
         self.evaluation_text = format!("エラー: {error}");
-        self.evaluation_passed = false;
+        self.evaluation_outcome = None;
         self.show_evaluation_overlay = true;
         self.evaluation_overlay_scroll = 0;
         self.status_message = STATUS_RUNTIME_ERROR.to_string();
@@ -260,7 +260,7 @@ impl App {
     pub fn prepare_next_training(&mut self) {
         self.show_evaluation_overlay = false;
         self.evaluation_text.clear();
-        self.evaluation_passed = false;
+        self.evaluation_outcome = None;
         let clipboard = self.summary_input.yank_text();
         self.summary_input = Self::new_summary_input();
         self.summary_input.set_yank_text(clipboard);

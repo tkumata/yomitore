@@ -1,3 +1,4 @@
+use crate::evaluation::{JevEvaluation, Judgment, Outcome};
 use jiff::{Timestamp, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 
@@ -32,9 +33,43 @@ pub mod local_timestamp {
 pub struct TrainingResult {
     #[serde(serialize_with = "local_timestamp::serialize")]
     pub timestamp: Timestamp,
+    #[serde(flatten)]
+    pub outcome: RecordedOutcome,
+}
+
+impl TrainingResult {
+    pub fn outcome(&self) -> Outcome {
+        match &self.outcome {
+            RecordedOutcome::Weighted { evaluation, .. } => evaluation.judgment.outcome(),
+            RecordedOutcome::Legacy(legacy) if legacy.passed => Outcome::Pass,
+            RecordedOutcome::Legacy(_) => Outcome::Fail,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum RecordedOutcome {
+    Weighted {
+        evaluation_version: EvaluationVersion,
+        #[serde(deserialize_with = "deserialize_weighted_evaluation")]
+        evaluation: EvaluationScores,
+    },
+    Legacy(LegacyOutcome),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum EvaluationVersion {
+    #[serde(rename = "v2")]
+    V2,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LegacyOutcome {
     pub passed: bool,
     #[serde(default)]
-    pub evaluation: Option<EvaluationScores>,
+    pub evaluation: Option<LegacyEvaluationScores>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -82,6 +117,30 @@ impl Default for Buddy {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct EvaluationScores {
+    pub scores: JevEvaluation,
+    pub total_score: u8,
+    pub judgment: Judgment,
+    pub improvements: [String; 3],
+}
+
+fn deserialize_weighted_evaluation<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<EvaluationScores, D::Error> {
+    let evaluation = EvaluationScores::deserialize(deserializer)?;
+    if !evaluation.scores.is_valid()
+        || evaluation.total_score > 100
+        || evaluation
+            .improvements
+            .iter()
+            .any(|text| text.trim().is_empty())
+    {
+        return Err(serde::de::Error::custom("invalid v2 evaluation"));
+    }
+    Ok(evaluation)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct LegacyEvaluationScores {
     pub appropriate: bool,
     pub importance: u8,
     pub conciseness: u8,
@@ -97,32 +156,34 @@ pub struct EvaluationScores {
 #[derive(Clone, Debug)]
 pub struct EvaluationScoreStats {
     pub average: f64,
-    pub median: f32,
+    pub median: f64,
 }
 
 #[derive(Clone, Debug)]
-pub struct EvaluationSummary {
+pub struct EvaluationSummary<const N: usize> {
     pub count: usize,
-    pub importance: Option<EvaluationScoreStats>,
-    pub conciseness: Option<EvaluationScoreStats>,
-    pub accuracy: Option<EvaluationScoreStats>,
+    pub scores: [Option<EvaluationScoreStats>; N],
 }
 
 #[derive(Default, Clone, Debug)]
 pub struct DailyStats {
     pub correct: usize,
     pub incorrect: usize,
+    pub review: usize,
 }
 
 impl DailyStats {
-    pub fn total(&self) -> usize {
-        self.correct + self.incorrect
+    pub fn record(&mut self, outcome: Outcome) {
+        match outcome {
+            Outcome::Pass => self.correct += 1,
+            Outcome::Fail => self.incorrect += 1,
+            Outcome::Review => self.review += 1,
+        }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct WeeklyStats {
     pub week_number: usize,
-    pub correct: usize,
-    pub incorrect: usize,
+    pub counts: DailyStats,
 }

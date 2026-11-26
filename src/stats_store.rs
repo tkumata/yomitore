@@ -59,7 +59,7 @@ fn record_at(path: &Path, evaluation: &EvaluationScores) -> io::Result<TrainingS
     lock.lock()?;
 
     let mut stats = load_from(path)?;
-    stats.add_result_with_evaluation(evaluation.overall_passed, Some(evaluation.clone()));
+    stats.add_evaluation(evaluation.clone());
     replace(path, &serde_json::to_vec_pretty(&stats)?)?;
     Ok(stats)
 }
@@ -105,17 +105,155 @@ mod tests {
     }
 
     fn scores() -> EvaluationScores {
+        use crate::evaluation::{JevEvaluation, Judgment};
+
         EvaluationScores {
-            appropriate: true,
-            importance: 5,
-            conciseness: 5,
-            accuracy: 5,
-            improvement1: String::new(),
-            improvement2: String::new(),
-            improvement3: String::new(),
-            overall_passed: true,
-            total_score: Some(100),
+            scores: JevEvaluation {
+                faithfulness: 4.0,
+                coverage: 4.0,
+                relevance: 4.0,
+                conciseness: 4.0,
+                clarity: 4.0,
+                critical_error: 0.0,
+            },
+            total_score: 100,
+            judgment: Judgment::Excellent,
+            improvements: ["改善1".into(), "改善2".into(), "改善3".into()],
         }
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Test assertions report the failed invariant"
+    )]
+    fn mixed_history_keeps_legacy_values_and_counts_review_separately() -> io::Result<()> {
+        use crate::evaluation::{Judgment, Outcome};
+        use crate::stats_analysis::get_recent_evaluation_summaries;
+        use jiff::tz::TimeZone;
+        use serde_json::json;
+
+        let dir = temp_dir()?;
+        let path = dir.join("stats.json");
+        let now = Timestamp::now();
+        let legacy = json!({
+            "appropriate": true, "importance": 4, "conciseness": 5, "accuracy": 3,
+            "improvement1": "a", "improvement2": "b", "improvement3": "c",
+            "overall_passed": true, "total_score": 83
+        });
+        fs::write(
+            &path,
+            serde_json::to_vec(&json!({"results": [
+                {"timestamp": now, "passed": true},
+                {"timestamp": now, "passed": true, "evaluation": legacy},
+            ]}))?,
+        )?;
+
+        let mut review = scores();
+        review.scores.conciseness = 3.5;
+        review.scores.critical_error = 0.30_f64.next_up();
+        review.total_score = review.scores.total_score();
+        review.judgment = Judgment::Review;
+        let stats = record_at(&path, &review)?;
+        assert_eq!(stats.current_streak, 2);
+        assert_eq!(stats.buddy.exp, 0);
+        let review_time = stats
+            .last_training_date
+            .ok_or_else(|| io::Error::other("missing timestamp"))?;
+
+        record_at(&path, &scores())?;
+        let loaded = load_from(&path)?;
+        assert_eq!(loaded.current_streak, 3);
+        assert_eq!(loaded.buddy.exp, 1);
+        assert_eq!(
+            loaded
+                .results
+                .iter()
+                .map(crate::models::TrainingResult::outcome)
+                .collect::<Vec<_>>(),
+            [Outcome::Pass, Outcome::Pass, Outcome::Review, Outcome::Pass]
+        );
+
+        let zone = TimeZone::UTC;
+        let today = zone.to_datetime(Timestamp::now()).date();
+        let (old, new) = get_recent_evaluation_summaries(&loaded.results, 2, today, &zone);
+        assert_eq!((old.count, new.count), (1, 2));
+        assert!(
+            old.scores
+                .get(1)
+                .and_then(Option::as_ref)
+                .is_some_and(|stats| {
+                    (stats.average - 5.0).abs() < f64::EPSILON
+                        && (stats.median - 5.0).abs() < f64::EPSILON
+                })
+        );
+        assert!(
+            new.scores
+                .get(3)
+                .and_then(Option::as_ref)
+                .is_some_and(|stats| {
+                    (stats.average - 3.75).abs() < f64::EPSILON
+                        && (stats.median - 3.75).abs() < f64::EPSILON
+                })
+        );
+        let day = zone.to_datetime(review_time).date();
+        let daily = loaded.get_daily_stats(2, today, &zone);
+        assert_eq!(
+            daily
+                .get(&day)
+                .map(|counts| (counts.review, counts.incorrect)),
+            Some((1, 0))
+        );
+        let weekly = loaded.get_weekly_stats(1, now);
+        assert_eq!(
+            weekly.first().map(|week| (
+                week.counts.correct,
+                week.counts.incorrect,
+                week.counts.review
+            )),
+            Some((3, 0, 1))
+        );
+
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+        assert_eq!(saved.pointer("/results/1/evaluation"), Some(&legacy));
+        assert_eq!(
+            saved
+                .pointer("/results/2/evaluation_version")
+                .and_then(serde_json::Value::as_str),
+            Some("v2")
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Test assertions report the failed invariant"
+    )]
+    fn invalid_weighted_history_cannot_be_overwritten() -> io::Result<()> {
+        use serde_json::json;
+
+        let dir = temp_dir()?;
+        let path = dir.join("stats.json");
+        record_at(&path, &scores())?;
+        let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
+        for (field, invalid) in [
+            ("/results/0/evaluation_version", json!("v3")),
+            ("/results/0/evaluation/scores/clarity", json!(4.1)),
+            ("/results/0/evaluation/judgment", json!(false)),
+        ] {
+            let mut malformed = saved.clone();
+            *malformed
+                .pointer_mut(field)
+                .ok_or_else(|| io::Error::other("missing v2 fixture field"))? = invalid;
+            let contents = serde_json::to_vec(&malformed)?;
+            fs::write(&path, &contents)?;
+            assert!(
+                matches!(record_at(&path, &scores()), Err(error) if error.kind() == io::ErrorKind::InvalidData)
+            );
+            assert_eq!(fs::read(&path)?, contents);
+        }
+        Ok(())
     }
 
     #[test]

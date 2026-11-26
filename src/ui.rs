@@ -1,4 +1,5 @@
 use crate::app::{App, MENU_OPTIONS, OVERLAY_MARGIN, SettingsFocus, ViewMode};
+use crate::evaluation::Outcome;
 use crate::help;
 use crate::reports;
 use ratatui::{
@@ -220,10 +221,10 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     let black_background = Paragraph::new("").style(Style::default().bg(Color::Black));
     frame.render_widget(black_background, overlay_area);
 
-    let border_color = if app.evaluation_passed {
-        Color::Green
-    } else {
-        Color::Red
+    let border_color = match app.evaluation_outcome {
+        Some(Outcome::Pass) => Color::Green,
+        Some(Outcome::Review) => Color::Yellow,
+        Some(Outcome::Fail) | None => Color::Red,
     };
 
     let block = Block::default()
@@ -524,6 +525,42 @@ fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::evaluation::{Judgment, format_jev_evaluation_display};
+    use ratatui::backend::TestBackend;
+
+    #[test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Test assertions report the failed invariant"
+    )]
+    fn evaluation_overlay_shows_each_outcome_with_a_distinct_label()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let mut scores =
+            crate::evaluation::parse_jev_response(&crate::evaluation::tests::response())
+                .map_err(|error| std::io::Error::other(format!("{error:?}")))?;
+        let improvements = ["改善1".into(), "改善2".into(), "改善3".into()];
+        let mut app = App::default();
+        let mut terminal = Terminal::new(TestBackend::new(100, 30))?;
+        let total = scores.total_score();
+        for (probability, expected, color) in [
+            (0.30, "優秀・合格", Color::Green),
+            (0.5, "要確認", Color::Yellow),
+            (0.70, "不合格（重大な誤り", Color::Red),
+        ] {
+            scores.critical_error = probability;
+            let judgment = Judgment::from_scores(total, probability);
+            app.finish_evaluation(
+                format_jev_evaluation_display(&scores, total, judgment, &improvements),
+                judgment.outcome(),
+            );
+            terminal.draw(|frame| render_evaluation_overlay(&app, frame))?;
+            let cells = terminal.backend().buffer().content();
+            let rendered: String = cells.iter().map(ratatui::buffer::Cell::symbol).collect();
+            assert!(rendered.replace(' ', "").contains(expected));
+            assert!(cells.iter().any(|cell| cell.fg == color));
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_calculate_overlay_area_standard() {
