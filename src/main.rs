@@ -19,7 +19,8 @@ use crate::{
     config::ApiKeys,
     error::AppError,
     evaluation::{
-        JevEvaluation, format_jev_evaluation_display, parse_improvements, parse_jev_response,
+        JevEvaluation, Judgment, format_jev_evaluation_display, parse_improvements,
+        parse_jev_response,
     },
     events::AppAction,
     models::EvaluationScores,
@@ -173,7 +174,7 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
     )
     .await
     {
-        Ok((jev_result, improvements)) => record_evaluation(app, &jev_result, &improvements),
+        Ok((jev_result, improvements)) => record_evaluation(app, jev_result, improvements),
         Err(EvaluationFailure::Request(service, error)) => {
             app.fail_evaluation_request(&safe_api_error_message(service, &error));
         }
@@ -223,23 +224,17 @@ fn safe_api_error_message(service: &str, error: &AppError) -> String {
     }
 }
 
-fn record_evaluation(app: &mut App, jev_result: &JevEvaluation, improvements: &[String; 3]) {
-    let overall_passed = jev_result.overall == evaluation::OverallEvaluation::Pass;
+fn record_evaluation(app: &mut App, jev_result: JevEvaluation, improvements: [String; 3]) {
     let total_score = jev_result.total_score();
-    let display = format_jev_evaluation_display(jev_result, improvements);
-    let [first, second, third] = improvements;
+    let judgment = Judgment::from_scores(total_score, jev_result.critical_error);
+    let display = format_jev_evaluation_display(&jev_result, total_score, judgment, &improvements);
     let scores = EvaluationScores {
-        appropriate: jev_result.appropriate,
-        importance: JevEvaluation::displayed_score(jev_result.importance),
-        conciseness: JevEvaluation::displayed_score(jev_result.conciseness),
-        accuracy: JevEvaluation::displayed_score(jev_result.accuracy),
-        improvement1: first.clone(),
-        improvement2: second.clone(),
-        improvement3: third.clone(),
-        overall_passed,
-        total_score: Some(total_score),
+        scores: jev_result,
+        total_score,
+        judgment,
+        improvements,
     };
-    app.finish_evaluation(display, overall_passed);
+    app.finish_evaluation(display, judgment.outcome());
     if app.stats_load_error.is_none() {
         app.pending_evaluation = Some(scores);
         save_pending_evaluation(app);
@@ -285,6 +280,14 @@ mod tests {
             result,
             Err(EvaluationFailure::Request("Jev", AppError::InvalidApiKey))
         ));
+        assert!(!groq_called.get());
+
+        let result = evaluate_responses(ready(Ok(serde_json::json!({"answers": {}}))), async {
+            groq_called.set(true);
+            Ok(String::new())
+        })
+        .await;
+        assert!(matches!(result, Err(EvaluationFailure::Format)));
         assert!(!groq_called.get());
 
         let result = evaluate_responses(

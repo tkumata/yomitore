@@ -1,5 +1,6 @@
 use crate::models::{
-    DailyStats, EvaluationScoreStats, EvaluationSummary, TrainingResult, WeeklyStats,
+    DailyStats, EvaluationScoreStats, EvaluationSummary, RecordedOutcome, TrainingResult,
+    WeeklyStats,
 };
 use jiff::{SignedDuration, Span, Timestamp, civil::Date, tz::TimeZone};
 use std::collections::HashMap;
@@ -17,11 +18,7 @@ pub fn calculate_daily_stats(
     for result in results {
         let date = zone.to_datetime(result.timestamp).date();
         if let Some(stats) = daily_map.get_mut(&date) {
-            if result.passed {
-                stats.correct += 1;
-            } else {
-                stats.incorrect += 1;
-            }
+            stats.record(result.outcome());
         }
     }
 
@@ -37,75 +34,98 @@ pub fn calculate_weekly_stats(
         let offset = i64::try_from(weeks - week - 1).unwrap_or(i64::MAX);
         let week_start = now - SignedDuration::from_hours(offset.saturating_mul(HOURS_PER_WEEK));
         let week_end = week_start + SignedDuration::from_hours(HOURS_PER_WEEK);
-        let (correct, incorrect) = count_results_in_range(results, week_start, week_end);
 
         WeeklyStats {
             week_number: week + 1,
-            correct,
-            incorrect,
+            counts: count_results_in_range(results, week_start, week_end),
         }
     })
 }
 
-pub fn get_recent_evaluation_summary(
+pub fn get_recent_evaluation_summaries(
     results: &[TrainingResult],
     days: usize,
     today: Date,
     zone: &TimeZone,
-) -> EvaluationSummary {
+) -> (EvaluationSummary<3>, EvaluationSummary<6>) {
     let start_date =
         today - Span::new().days(i64::try_from(days.saturating_sub(1)).unwrap_or(i64::MAX));
 
-    let mut importance_scores = Vec::new();
-    let mut conciseness_scores = Vec::new();
-    let mut accuracy_scores = Vec::new();
+    let mut legacy_scores = std::array::from_fn(|_| Vec::new());
+    let mut weighted_scores = std::array::from_fn(|_| Vec::new());
+    let mut legacy_count = 0;
+    let mut weighted_count = 0;
 
     for result in results {
         if days == 0 || !(start_date..=today).contains(&zone.to_datetime(result.timestamp).date()) {
             continue;
         }
-        if let Some(evaluation) = &result.evaluation {
-            importance_scores.push(evaluation.importance);
-            conciseness_scores.push(evaluation.conciseness);
-            accuracy_scores.push(evaluation.accuracy);
+        match &result.outcome {
+            RecordedOutcome::Legacy(legacy) => {
+                if let Some(evaluation) = &legacy.evaluation {
+                    let scores = [
+                        evaluation.importance,
+                        evaluation.conciseness,
+                        evaluation.accuracy,
+                    ];
+                    for (column, score) in legacy_scores.iter_mut().zip(scores) {
+                        column.push(f64::from(score));
+                    }
+                    legacy_count += 1;
+                }
+            }
+            RecordedOutcome::Weighted { evaluation, .. } => {
+                let scores = evaluation
+                    .scores
+                    .scores()
+                    .into_iter()
+                    .chain([f64::from(evaluation.total_score)]);
+                for (column, score) in weighted_scores.iter_mut().zip(scores) {
+                    column.push(score);
+                }
+                weighted_count += 1;
+            }
         }
     }
 
-    EvaluationSummary {
-        count: importance_scores.len(),
-        importance: calculate_score_stats(&importance_scores),
-        conciseness: calculate_score_stats(&conciseness_scores),
-        accuracy: calculate_score_stats(&accuracy_scores),
-    }
+    (
+        EvaluationSummary {
+            count: legacy_count,
+            scores: legacy_scores.map(calculate_score_stats),
+        },
+        EvaluationSummary {
+            count: weighted_count,
+            scores: weighted_scores.map(calculate_score_stats),
+        },
+    )
 }
 
 #[expect(
     clippy::cast_precision_loss,
     reason = "f64 represents counts exactly up to 2^53"
 )]
-pub fn calculate_score_stats(scores: &[u8]) -> Option<EvaluationScoreStats> {
+pub fn calculate_score_stats(mut scores: Vec<f64>) -> Option<EvaluationScoreStats> {
     if scores.is_empty() {
         return None;
     }
 
-    let sum: f64 = scores.iter().map(|&value| f64::from(value)).sum();
+    let sum: f64 = scores.iter().sum();
     let average = sum / scores.len() as f64;
-    let median = calculate_median(scores);
+    let median = calculate_median(&mut scores);
 
     Some(EvaluationScoreStats { average, median })
 }
 
-pub fn calculate_median(scores: &[u8]) -> f32 {
-    let mut sorted = scores.to_vec();
-    sorted.sort_unstable();
-
-    let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 1 {
-        f32::from(*sorted.get(mid).unwrap_or(&0))
-    } else {
-        let left = f32::from(*sorted.get(mid - 1).unwrap_or(&0));
-        let right = f32::from(*sorted.get(mid).unwrap_or(&0));
-        f32::midpoint(left, right)
+pub fn calculate_median(scores: &mut [f64]) -> f64 {
+    scores.sort_unstable_by(f64::total_cmp);
+    let mid = scores.len() / 2;
+    match (
+        scores.get(mid),
+        mid.checked_sub(1).and_then(|left| scores.get(left)),
+    ) {
+        (Some(&right), Some(&left)) if scores.len().is_multiple_of(2) => f64::midpoint(left, right),
+        (Some(&middle), _) => middle,
+        _ => 0.0,
     }
 }
 
@@ -122,19 +142,12 @@ fn count_results_in_range(
     results: &[TrainingResult],
     start: Timestamp,
     end: Timestamp,
-) -> (usize, usize) {
-    let mut correct = 0;
-    let mut incorrect = 0;
-
+) -> DailyStats {
+    let mut counts = DailyStats::default();
     for result in results {
         if result.timestamp >= start && result.timestamp < end {
-            if result.passed {
-                correct += 1;
-            } else {
-                incorrect += 1;
-            }
+            counts.record(result.outcome());
         }
     }
-
-    (correct, incorrect)
+    counts
 }
