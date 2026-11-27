@@ -55,7 +55,7 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
             }
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.selected_menu_item < MENU_OPTIONS.len() - 1 {
+            if app.selected_menu_item < MENU_OPTIONS.len() {
                 app.selected_menu_item += 1;
                 if let Some(&count) = MENU_OPTIONS.get(app.selected_menu_item) {
                     app.character_count = count;
@@ -65,8 +65,11 @@ fn handle_menu_events(app: &mut App, key: event::KeyEvent) -> Option<AppAction> 
         KeyCode::Enter => {
             if let Some(&count) = MENU_OPTIONS.get(app.selected_menu_item) {
                 app.character_count = count;
+                return Some(AppAction::StartTraining);
             }
-            return Some(AppAction::StartTraining);
+        }
+        KeyCode::Char(' ') if app.selected_menu_item == MENU_OPTIONS.len() => {
+            app.diagnosis_mode = !app.diagnosis_mode;
         }
         KeyCode::Char('r') => {
             app.enter_report_view();
@@ -508,8 +511,8 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 mod tests {
     use super::{
         App, AppAction, KeyCode, KeyModifiers, SettingsFocus, ViewMode, calculate_max_scroll,
-        handle_editing_events, handle_normal_mode_events, handle_settings_events,
-        handle_summary_key,
+        handle_editing_events, handle_menu_events, handle_normal_mode_events,
+        handle_settings_events, handle_summary_key,
     };
     use crate::app::SUMMARY_LINE_ENDING;
     use ratatui::{
@@ -519,6 +522,34 @@ mod tests {
         style::Modifier,
     };
     use ratatui_textarea::TextArea;
+
+    #[test]
+    fn diagnosis_toggles_with_space_only_on_its_menu_row() {
+        let mut app = App::default();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        let space = key(KeyCode::Char(' '));
+        let enter = key(KeyCode::Enter);
+
+        handle_menu_events(&mut app, space);
+        assert!(!app.diagnosis_mode);
+        for _ in crate::app::MENU_OPTIONS {
+            handle_menu_events(&mut app, key(KeyCode::Down));
+        }
+        assert!(handle_menu_events(&mut app, enter).is_none());
+        assert!(handle_menu_events(&mut app, space).is_none());
+        assert!(app.diagnosis_mode);
+        handle_menu_events(&mut app, space);
+        assert!(!app.diagnosis_mode);
+        handle_menu_events(&mut app, space);
+
+        handle_menu_events(&mut app, key(KeyCode::Up));
+        assert!(matches!(
+            handle_menu_events(&mut app, enter),
+            Some(AppAction::StartTraining)
+        ));
+        assert_eq!(app.character_count, 2880);
+        assert!(app.diagnosis_mode);
+    }
 
     #[test]
     fn settings_form_masks_input_and_routes_save_and_cancel() {
