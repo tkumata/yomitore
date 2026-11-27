@@ -19,8 +19,8 @@ use crate::{
     config::ApiKeys,
     error::AppError,
     evaluation::{
-        JevEvaluation, Judgment, format_jev_evaluation_display, parse_improvements,
-        parse_jev_response,
+        JevEvaluation, Judgment, ParseEvaluationError, format_jev_evaluation_display,
+        parse_improvements, parse_jev_response,
     },
     events::AppAction,
     models::EvaluationScores,
@@ -174,18 +174,29 @@ async fn handle_evaluate(app: &mut App, tui: &mut tui::Tui) -> Result<(), AppErr
     )
     .await
     {
-        Ok((jev_result, improvements)) => record_evaluation(app, jev_result, improvements),
+        Ok((jev_result, improvements)) => {
+            if let Some(scores) = finish_evaluation(app, jev_result, improvements) {
+                app.pending_evaluation = Some(scores);
+                save_pending_evaluation(app);
+            }
+        }
         Err(EvaluationFailure::Request(service, error)) => {
             app.fail_evaluation_request(&safe_api_error_message(service, &error));
         }
-        Err(EvaluationFailure::Format) => app.fail_evaluation_format(),
+        Err(EvaluationFailure::Format(service, error)) => {
+            app.fail_evaluation_format();
+            if app.diagnosis_mode {
+                app.evaluation_text =
+                    format!("{}\n診断結果 {service} ／ {error}", app.evaluation_text);
+            }
+        }
     }
     Ok(())
 }
 
 enum EvaluationFailure {
     Request(&'static str, AppError),
-    Format,
+    Format(&'static str, ParseEvaluationError),
 }
 
 async fn evaluate_responses(
@@ -195,11 +206,13 @@ async fn evaluate_responses(
     let response = jev
         .await
         .map_err(|error| EvaluationFailure::Request("Jev", error))?;
-    let evaluation = parse_jev_response(&response).map_err(|_| EvaluationFailure::Format)?;
+    let evaluation =
+        parse_jev_response(&response).map_err(|error| EvaluationFailure::Format("Jev", error))?;
     let text = groq
         .await
         .map_err(|error| EvaluationFailure::Request("Groq", error))?;
-    let improvements = parse_improvements(&text).map_err(|_| EvaluationFailure::Format)?;
+    let improvements =
+        parse_improvements(&text).map_err(|error| EvaluationFailure::Format("Groq", error))?;
     Ok((evaluation, improvements))
 }
 
@@ -224,21 +237,21 @@ fn safe_api_error_message(service: &str, error: &AppError) -> String {
     }
 }
 
-fn record_evaluation(app: &mut App, jev_result: JevEvaluation, improvements: [String; 3]) {
+fn finish_evaluation(
+    app: &mut App,
+    jev_result: JevEvaluation,
+    improvements: [String; 3],
+) -> Option<EvaluationScores> {
     let total_score = jev_result.total_score();
     let judgment = Judgment::from_scores(total_score, jev_result.critical_error);
     let display = format_jev_evaluation_display(&jev_result, total_score, judgment, &improvements);
-    let scores = EvaluationScores {
+    app.finish_evaluation(display, judgment.outcome());
+    (!app.diagnosis_mode && app.stats_load_error.is_none()).then_some(EvaluationScores {
         scores: jev_result,
         total_score,
         judgment,
         improvements,
-    };
-    app.finish_evaluation(display, judgment.outcome());
-    if app.stats_load_error.is_none() {
-        app.pending_evaluation = Some(scores);
-        save_pending_evaluation(app);
-    }
+    })
 }
 
 fn save_pending_evaluation(app: &mut App) {
@@ -268,6 +281,24 @@ mod tests {
     use super::*;
     use std::{cell::Cell, future::ready};
 
+    #[test]
+    fn diagnosis_shows_completed_evaluation_without_producing_scores_to_save() {
+        let Ok(jev_result) = parse_jev_response(&evaluation::tests::response()) else {
+            unreachable!("invalid Jev response fixture");
+        };
+        let improvements = ["改善1".into(), "改善2".into(), "改善3".into()];
+        for diagnosis_mode in [false, true] {
+            let mut app = App {
+                diagnosis_mode,
+                ..App::default()
+            };
+            let scores = finish_evaluation(&mut app, jev_result.clone(), improvements.clone());
+            assert!(app.show_evaluation_overlay);
+            assert!(app.evaluation_text.contains("総合得点"));
+            assert_eq!(scores.is_none(), diagnosis_mode);
+        }
+    }
+
     #[tokio::test]
     async fn only_complete_api_responses_produce_a_recordable_evaluation() {
         let groq_called = Cell::new(false);
@@ -287,7 +318,13 @@ mod tests {
             Ok(String::new())
         })
         .await;
-        assert!(matches!(result, Err(EvaluationFailure::Format)));
+        assert!(matches!(
+            result,
+            Err(EvaluationFailure::Format(
+                "Jev",
+                ParseEvaluationError::MissingField("critical_error")
+            ))
+        ));
         assert!(!groq_called.get());
 
         let result = evaluate_responses(
@@ -305,7 +342,13 @@ mod tests {
             ready(Ok("改善点1: 不足".to_owned())),
         )
         .await;
-        assert!(matches!(result, Err(EvaluationFailure::Format)));
+        assert!(matches!(
+            result,
+            Err(EvaluationFailure::Format(
+                "Groq",
+                ParseEvaluationError::MissingField("改善点2")
+            ))
+        ));
 
         let result = evaluate_responses(
             ready(Ok(evaluation::tests::response())),

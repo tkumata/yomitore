@@ -68,11 +68,14 @@ pub struct JevEvaluation {
     pub critical_error: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseEvaluationError {
+    #[error("項目「{0}」がありません。")]
     MissingField(&'static str),
+    #[error("項目「{0}」が重複しています。")]
     DuplicateField(&'static str),
-    InvalidValue(&'static str, String),
+    #[error("項目「{0}」の形式が不正です（{1}）。")]
+    InvalidValue(&'static str, &'static str),
 }
 
 impl JevEvaluation {
@@ -208,10 +211,7 @@ pub fn parse_improvements(response: &str) -> Result<[String; 3], ParseEvaluation
         };
         let value = value.trim();
         if value.is_empty() {
-            return Err(ParseEvaluationError::InvalidValue(
-                field,
-                "空欄".to_string(),
-            ));
+            return Err(ParseEvaluationError::InvalidValue(field, "空欄"));
         }
         if slot.is_some() {
             return Err(ParseEvaluationError::DuplicateField(field));
@@ -328,8 +328,8 @@ fn valid_probability_map(value: Option<&Value>, expected: &[&str]) -> bool {
     probabilities.len() == expected.len() && total.is_some_and(|sum: f64| (sum - 1.0).abs() < 0.01)
 }
 
-fn invalid(field: &'static str, part: &str) -> ParseEvaluationError {
-    ParseEvaluationError::InvalidValue(field, part.to_string())
+fn invalid(field: &'static str, part: &'static str) -> ParseEvaluationError {
+    ParseEvaluationError::InvalidValue(field, part)
 }
 
 #[cfg(test)]

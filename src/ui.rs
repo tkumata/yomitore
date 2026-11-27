@@ -57,7 +57,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     let [header_area, body_area, status_area] = main_layout.as_ref() else {
         return;
     };
-    render_header(frame, *header_area);
+    render_header(app, frame, *header_area);
 
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -77,8 +77,13 @@ pub fn render(app: &mut App, frame: &mut Frame) {
     render_status_bar(app, frame, *status_area);
 }
 
-fn render_header(frame: &mut Frame, area: Rect) {
-    let title = Paragraph::new(" yomitore: 読解力トレーニング ")
+fn render_header(app: &App, frame: &mut Frame, area: Rect) {
+    let title = if app.diagnosis_mode {
+        " yomitore: 診断モード（成績は保存しません） "
+    } else {
+        " yomitore: 読解力トレーニング "
+    };
+    let title = Paragraph::new(title)
         .style(Style::new().bold())
         .alignment(Alignment::Center);
     frame.render_widget(title, area);
@@ -285,7 +290,7 @@ fn render_report_view(app: &App, frame: &mut Frame) {
     let [header_area, body_area, status_area] = layout.as_ref() else {
         return;
     };
-    render_header(frame, *header_area);
+    render_header(app, frame, *header_area);
     reports::render_unified_report(frame, *body_area, &app.stats);
     render_status_bar(app, frame, *status_area);
 }
@@ -342,11 +347,11 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     };
 
     let block = Block::default()
-        .title("文字数を選択してください")
+        .title("トレーニング")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL);
 
-    let menu_lines = build_menu_lines(app.selected_menu_item);
+    let menu_lines = build_menu_lines(app.selected_menu_item, app.diagnosis_mode);
 
     let paragraph = Paragraph::new(menu_lines)
         .block(block)
@@ -456,7 +461,7 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     let [header_area, body_area, status_area] = layout.as_ref() else {
         return;
     };
-    render_header(frame, *header_area);
+    render_header(app, frame, *header_area);
 
     let help_content = help::HELP_CONTENT;
     let help_text = if help_content.is_empty() {
@@ -480,12 +485,20 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     render_status_bar(app, frame, *status_area);
 }
 
-fn build_menu_lines(selected_menu_item: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::with_capacity(MENU_OPTIONS.len().saturating_add(2));
+fn build_menu_lines(selected_menu_item: usize, diagnosis_mode: bool) -> Vec<Line<'static>> {
+    let mut lines = Vec::with_capacity(MENU_OPTIONS.len().saturating_add(3));
     lines.push(Line::default());
     for (index, &count) in MENU_OPTIONS.iter().enumerate() {
-        lines.push(build_menu_option_line(count, index == selected_menu_item));
+        lines.push(build_menu_option_line(
+            format!("{count:>4} 文字"),
+            index == selected_menu_item,
+        ));
     }
+    let state = if diagnosis_mode { "ON" } else { "OFF" };
+    lines.push(build_menu_option_line(
+        format!("診断モード {state} (Space)"),
+        selected_menu_item == MENU_OPTIONS.len(),
+    ));
     lines.push(Line::default());
 
     lines
@@ -503,14 +516,14 @@ fn menu_logo_height() -> u16 {
 }
 
 fn menu_options_height() -> u16 {
-    u16::try_from(MENU_OPTIONS.len()).unwrap_or(u16::MAX)
+    u16::try_from(MENU_OPTIONS.len().saturating_add(1)).unwrap_or(u16::MAX)
 }
 
 fn menu_block_height() -> u16 {
     menu_options_height().saturating_add(4)
 }
 
-fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
+fn build_menu_option_line(label: String, is_selected: bool) -> Line<'static> {
     let style = if is_selected {
         Style::default()
             .fg(Color::Cyan)
@@ -519,7 +532,7 @@ fn build_menu_option_line(count: u16, is_selected: bool) -> Line<'static> {
         Style::default()
     };
 
-    Line::from(Span::styled(format!("{count:>4} 文字"), style))
+    Line::from(Span::styled(label, style))
 }
 
 #[cfg(test)]
@@ -595,9 +608,9 @@ mod tests {
 
     #[test]
     fn test_build_menu_lines_center_selected_without_widening() {
-        let lines = build_menu_lines(1);
+        let lines = build_menu_lines(1, false);
 
-        assert_eq!(lines.len(), MENU_OPTIONS.len().saturating_add(2));
+        assert_eq!(lines.len(), MENU_OPTIONS.len().saturating_add(3));
         assert_eq!(lines.first().map(|line| line.spans.len()), Some(0));
         assert_eq!(lines.last().map(|line| line.spans.len()), Some(0));
 
@@ -657,7 +670,7 @@ mod tests {
         assert_eq!(menu_logo_height(), 6);
         assert_eq!(MENU_LOGO_GAP_HEIGHT, 1);
         assert_eq!(MENU_TITLE_BLOCK_GAP_HEIGHT, 3);
-        assert_eq!(menu_options_height(), 4);
-        assert_eq!(menu_block_height(), 8);
+        assert_eq!(menu_options_height(), 5);
+        assert_eq!(menu_block_height(), 9);
     }
 }
