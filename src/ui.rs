@@ -79,7 +79,7 @@ pub fn render(app: &mut App, frame: &mut Frame) {
 
 fn render_header(app: &App, frame: &mut Frame, area: Rect) {
     let title = if app.diagnosis_mode {
-        " yomitore: 診断モード（成績は保存しません） "
+        " yomitore: 診断モード (成績は保存しません) "
     } else {
         " yomitore: 読解力トレーニング "
     };
@@ -91,14 +91,14 @@ fn render_header(app: &App, frame: &mut Frame, area: Rect) {
 
 fn render_original_text(app: &mut App, frame: &mut Frame, area: Rect) {
     let block = Block::default()
-        .title("原文 (↑/↓ or j/k: スクロール)")
+        .title("原文 (↑/↓ or j/k:スクロール)")
         .borders(Borders::ALL);
     let inner = block.inner(area);
     let text = app
         .original_text
         .as_deref()
         .or(app.generation_error.as_deref())
-        .unwrap_or("原文を生成しています...");
+        .unwrap_or("原文を生成中...");
     let lines = wrap_original_text(text, inner.width);
     let max_scroll = lines.len().saturating_sub(usize::from(inner.height));
     app.original_text_scroll = app
@@ -134,7 +134,7 @@ fn wrap_original_text(text: &str, width: u16) -> Vec<Line<'static>> {
 }
 
 fn render_summary_input(app: &App, frame: &mut Frame, area: Rect) {
-    let title = "あなたの要約 (i:入力モード Esc:通常モード Ctrl+S:送信)";
+    let title = "要約 (i:入力 | Esc:戻る | Ctrl+S:送信)";
 
     let border_style = if app.view_mode == ViewMode::Editing {
         Style::default().fg(Color::Cyan)
@@ -233,7 +233,7 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     };
 
     let block = Block::default()
-        .title(" 評価結果 (e: 閉じる, Shift+↑/↓ or Shift+j/k: スクロール, n: 次の問題) ")
+        .title(" 評価結果 (e:閉じる | Shift+↑/↓ or Shift+j/k:スクロール | n:次の問題) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(Color::Black));
@@ -257,12 +257,11 @@ fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
         app.view_mode,
         ViewMode::Menu | ViewMode::Normal | ViewMode::Editing
     ) {
-        " | s: 設定"
+        " | s:設定"
     } else {
         ""
     };
-    let status_text =
-        format!(" {status_message} | r: レポート | h: ヘルプ{settings_hint} | q: 終了 ");
+    let status_text = format!(" {status_message} | r:レポート | h:ヘルプ{settings_hint} | q:終了 ");
     let mut lines = vec![Line::from(status_text)];
     if let Some(error) = &app.stats_load_error {
         lines.push(Line::from(error.as_str()).style(Style::default().fg(Color::Yellow)));
@@ -347,7 +346,7 @@ fn render_menu_view(app: &App, frame: &mut Frame) {
     };
 
     let block = Block::default()
-        .title("トレーニング")
+        .title(" 文字数選択 ")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL);
 
@@ -442,7 +441,7 @@ fn render_settings_view(app: &App, frame: &mut Frame) {
             Span::raw(" "),
             button(" Cancel ", SettingsFocus::Cancel),
         ]),
-        Line::from("Tab / Shift+Tab: 移動 | Enter: 次へ・実行 | Esc: キャンセル"),
+        Line::from("Tab/Shift+Tab:移動 | Enter:次へ・実行 | Esc:キャンセル"),
         Line::from("空欄のまま保存すると、現在のキーを保持します。"),
         Line::from(app.status_message.as_str()),
     ]);
@@ -471,7 +470,7 @@ fn render_help_view(app: &App, frame: &mut Frame) {
     };
 
     let block = Block::default()
-        .title("ヘルプ (↑/↓ or j/k: スクロール, h: 閉じる)")
+        .title("ヘルプ (↑/↓ or j/k:スクロール | h:閉じる)")
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL);
 
@@ -496,7 +495,7 @@ fn build_menu_lines(selected_menu_item: usize, diagnosis_mode: bool) -> Vec<Line
     }
     let state = if diagnosis_mode { "ON" } else { "OFF" };
     lines.push(build_menu_option_line(
-        format!("診断モード {state} (Space)"),
+        format!("診断モード: {state} (スペースで切替)"),
         selected_menu_item == MENU_OPTIONS.len(),
     ));
     lines.push(Line::default());

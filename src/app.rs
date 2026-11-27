@@ -55,17 +55,17 @@ pub const MIN_OVERLAY_HEIGHT: u16 = 10;
 const BLOCK_BORDER_SIZE: u16 = 2;
 
 const GENERATION_ERROR_PREFIX: &str = "文章生成に失敗しました: ";
-pub const STATUS_MENU: &str = "文字数を選び、開始してください。";
-pub const STATUS_NORMAL: &str = "通常モードです。'i' で入力します。";
-pub const STATUS_EDITING: &str = "入力モードです。Esc で戻ります。";
-pub const STATUS_REPORT: &str = "レポート表示中です。'r' で閉じます。";
-pub const STATUS_HELP: &str = "ヘルプ表示中です。'h' で閉じます。";
-pub const STATUS_GENERATING: &str = "文章を生成しています...";
-pub const STATUS_NEXT_GENERATING: &str = "次の文章を生成しています...";
-const STATUS_GENERATION_FAILED: &str = "文章を生成できませんでした。'n' で再試行します。";
-pub const STATUS_EVALUATING: &str = "要約を評価しています...";
-pub const STATUS_EVALUATED: &str = "評価が完了しました。'e' で切替、'n' で次へ進みます。";
-pub const STATUS_INVALID_EVALUATION: &str = "評価結果の形式が不正です。";
+pub const STATUS_MENU: &str = "文字数を選び ENTER で開始";
+pub const STATUS_NORMAL: &str = "通常モード。'i' で要約を入力。";
+pub const STATUS_EDITING: &str = "入力モード。Esc で戻る。";
+pub const STATUS_REPORT: &str = "レポート表示中。'r' で閉じる。";
+pub const STATUS_HELP: &str = "ヘルプ表示中。'h' で閉じる";
+pub const STATUS_GENERATING: &str = "文章を生成中...";
+pub const STATUS_NEXT_GENERATING: &str = "次の文章を生成中...";
+const STATUS_GENERATION_FAILED: &str = "文章を生成できませんでした。'n' で再試行。";
+pub const STATUS_EVALUATING: &str = "要約を評価中...";
+pub const STATUS_EVALUATED: &str = "評価が完了。'e' で切替、'n' で次の問題。";
+pub const STATUS_INVALID_EVALUATION: &str = "評価結果の形式が不正。";
 pub const STATUS_RUNTIME_ERROR: &str = "エラーが発生しました。";
 
 pub struct App {
