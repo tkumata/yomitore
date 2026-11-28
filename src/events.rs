@@ -403,6 +403,10 @@ fn summary_row_end(input: &TextArea<'_>, home: bool) -> CursorMove {
 
 fn handle_report_events(app: &mut App, key: event::KeyEvent) {
     match key.code {
+        KeyCode::Down | KeyCode::Char('j') => {
+            app.report_scroll = app.report_scroll.saturating_add(1);
+        }
+        KeyCode::Up | KeyCode::Char('k') => app.report_scroll = app.report_scroll.saturating_sub(1),
         KeyCode::Char('r') => {
             app.return_from_aux_view();
         }
@@ -511,7 +515,7 @@ fn calculate_max_scroll(text: &str, visible_height: u16, visible_width: u16) -> 
 mod tests {
     use super::{
         App, AppAction, KeyCode, KeyModifiers, SettingsFocus, ViewMode, calculate_max_scroll,
-        handle_editing_events, handle_menu_events, handle_normal_mode_events,
+        handle_editing_events, handle_menu_events, handle_normal_mode_events, handle_report_events,
         handle_settings_events, handle_summary_key,
     };
     use crate::app::SUMMARY_LINE_ENDING;
@@ -522,6 +526,23 @@ mod tests {
         style::Modifier,
     };
     use ratatui_textarea::TextArea;
+
+    #[test]
+    fn report_scroll_keys_work_and_reopening_resets_the_position() {
+        let mut app = App::default();
+        let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+        handle_menu_events(&mut app, key(KeyCode::Char('r')));
+        handle_report_events(&mut app, key(KeyCode::Up));
+        assert_eq!(app.report_scroll, 0);
+        handle_report_events(&mut app, key(KeyCode::Char('j')));
+        handle_report_events(&mut app, key(KeyCode::Down));
+        handle_report_events(&mut app, key(KeyCode::Char('k')));
+        assert_eq!(app.report_scroll, 1);
+        handle_report_events(&mut app, key(KeyCode::Char('r')));
+        handle_menu_events(&mut app, key(KeyCode::Char('r')));
+        assert!(matches!(app.view_mode, ViewMode::Report));
+        assert_eq!(app.report_scroll, 0);
+    }
 
     #[test]
     fn diagnosis_toggles_with_space_only_on_its_menu_row() {

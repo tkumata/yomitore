@@ -109,11 +109,9 @@ mod tests {
 
         EvaluationScores {
             scores: JevEvaluation {
-                faithfulness: 4.0,
-                coverage: 4.0,
-                relevance: 4.0,
-                conciseness: 4.0,
-                clarity: 4.0,
+                explicit_information: 4.0,
+                overall_meaning: 4.0,
+                relationships: 4.0,
                 critical_error: 0.0,
             },
             total_score: 100,
@@ -127,7 +125,7 @@ mod tests {
         clippy::panic_in_result_fn,
         reason = "Test assertions report the failed invariant"
     )]
-    fn mixed_history_keeps_legacy_values_and_counts_review_separately() -> io::Result<()> {
+    fn mixed_history_keeps_all_versions_and_counts_review_separately() -> io::Result<()> {
         use crate::evaluation::{Judgment, Outcome};
         use crate::stats_analysis::get_recent_evaluation_summaries;
         use jiff::tz::TimeZone;
@@ -141,21 +139,29 @@ mod tests {
             "improvement1": "a", "improvement2": "b", "improvement3": "c",
             "overall_passed": true, "total_score": 83
         });
+        let summary = json!({
+            "scores": {
+                "faithfulness": 4.0, "coverage": 4.0, "relevance": 4.0,
+                "conciseness": 3.0, "clarity": 4.0, "critical_error": 0.10
+            },
+            "total_score": 82, "judgment": "good", "improvements": ["a", "b", "c"]
+        });
         fs::write(
             &path,
             serde_json::to_vec(&json!({"results": [
                 {"timestamp": now, "passed": true},
                 {"timestamp": now, "passed": true, "evaluation": legacy},
+                {"timestamp": now, "evaluation_version": "v2", "evaluation": summary},
             ]}))?,
         )?;
 
         let mut review = scores();
-        review.scores.conciseness = 3.5;
+        review.scores.relationships = 3.5;
         review.scores.critical_error = 0.30_f64.next_up();
         review.total_score = review.scores.total_score();
         review.judgment = Judgment::Review;
         let stats = record_at(&path, &review)?;
-        assert_eq!(stats.current_streak, 2);
+        assert_eq!(stats.current_streak, 3);
         assert_eq!(stats.buddy.exp, 0);
         let review_time = stats
             .last_training_date
@@ -163,7 +169,7 @@ mod tests {
 
         record_at(&path, &scores())?;
         let loaded = load_from(&path)?;
-        assert_eq!(loaded.current_streak, 3);
+        assert_eq!(loaded.current_streak, 4);
         assert_eq!(loaded.buddy.exp, 1);
         assert_eq!(
             loaded
@@ -171,31 +177,30 @@ mod tests {
                 .iter()
                 .map(crate::models::TrainingResult::outcome)
                 .collect::<Vec<_>>(),
-            [Outcome::Pass, Outcome::Pass, Outcome::Review, Outcome::Pass]
+            [
+                Outcome::Pass,
+                Outcome::Pass,
+                Outcome::Pass,
+                Outcome::Review,
+                Outcome::Pass
+            ]
         );
 
         let zone = TimeZone::UTC;
         let today = zone.to_datetime(Timestamp::now()).date();
-        let (old, new) = get_recent_evaluation_summaries(&loaded.results, 2, today, &zone);
-        assert_eq!((old.count, new.count), (1, 2));
-        assert!(
-            old.scores
-                .get(1)
-                .and_then(Option::as_ref)
-                .is_some_and(|stats| {
-                    (stats.average - 5.0).abs() < f64::EPSILON
-                        && (stats.median - 5.0).abs() < f64::EPSILON
-                })
-        );
-        assert!(
-            new.scores
-                .get(3)
-                .and_then(Option::as_ref)
-                .is_some_and(|stats| {
-                    (stats.average - 3.75).abs() < f64::EPSILON
-                        && (stats.median - 3.75).abs() < f64::EPSILON
-                })
-        );
+        let (old, summary_scores, reading) =
+            get_recent_evaluation_summaries(&loaded.results, 2, today, &zone);
+        assert_eq!((old.count, summary_scores.count, reading.count), (1, 1, 2));
+        for (score, expected) in [
+            (old.scores.get(1), 5.0),
+            (summary_scores.scores.get(3), 3.0),
+            (reading.scores.get(2), 3.75),
+        ] {
+            assert!(score.and_then(Option::as_ref).is_some_and(|score| {
+                (score.average - expected).abs() < f64::EPSILON
+                    && (score.median - expected).abs() < f64::EPSILON
+            }));
+        }
         let day = zone.to_datetime(review_time).date();
         let daily = loaded.get_daily_stats(2, today, &zone);
         assert_eq!(
@@ -211,16 +216,17 @@ mod tests {
                 week.counts.incorrect,
                 week.counts.review
             )),
-            Some((3, 0, 1))
+            Some((4, 0, 1))
         );
 
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
         assert_eq!(saved.pointer("/results/1/evaluation"), Some(&legacy));
+        assert_eq!(saved.pointer("/results/2/evaluation"), Some(&summary));
         assert_eq!(
             saved
-                .pointer("/results/2/evaluation_version")
+                .pointer("/results/3/evaluation_version")
                 .and_then(serde_json::Value::as_str),
-            Some("v2")
+            Some("v3")
         );
         Ok(())
     }
@@ -238,14 +244,16 @@ mod tests {
         record_at(&path, &scores())?;
         let saved: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)?;
         for (field, invalid) in [
-            ("/results/0/evaluation_version", json!("v3")),
-            ("/results/0/evaluation/scores/clarity", json!(4.1)),
+            ("/results/0/evaluation_version", json!("v4")),
+            ("/results/0/evaluation_version", json!("v2")),
+            ("/results/0/evaluation/scores/overall_meaning", json!(4.1)),
+            ("/results/0/evaluation/scores/critical_error", json!(-0.1)),
             ("/results/0/evaluation/judgment", json!(false)),
         ] {
             let mut malformed = saved.clone();
             *malformed
                 .pointer_mut(field)
-                .ok_or_else(|| io::Error::other("missing v2 fixture field"))? = invalid;
+                .ok_or_else(|| io::Error::other("missing v3 fixture field"))? = invalid;
             let contents = serde_json::to_vec(&malformed)?;
             fs::write(&path, &contents)?;
             assert!(

@@ -1,4 +1,4 @@
-use crate::evaluation::{JevEvaluation, Judgment, Outcome};
+use crate::evaluation::{JevEvaluation, Judgment, Outcome, deserialize_bounded};
 use jiff::{Timestamp, tz::TimeZone};
 use serde::{Deserialize, Serialize};
 
@@ -40,7 +40,12 @@ pub struct TrainingResult {
 impl TrainingResult {
     pub fn outcome(&self) -> Outcome {
         match &self.outcome {
-            RecordedOutcome::Weighted { evaluation, .. } => evaluation.judgment.outcome(),
+            RecordedOutcome::Weighted(WeightedOutcome::V3 { evaluation }) => {
+                evaluation.judgment.outcome()
+            }
+            RecordedOutcome::Weighted(WeightedOutcome::V2 { evaluation }) => {
+                evaluation.judgment.outcome()
+            }
             RecordedOutcome::Legacy(legacy) if legacy.passed => Outcome::Pass,
             RecordedOutcome::Legacy(_) => Outcome::Fail,
         }
@@ -50,18 +55,23 @@ impl TrainingResult {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(untagged)]
 pub enum RecordedOutcome {
-    Weighted {
-        evaluation_version: EvaluationVersion,
-        #[serde(deserialize_with = "deserialize_weighted_evaluation")]
-        evaluation: EvaluationScores,
-    },
+    Weighted(WeightedOutcome),
     Legacy(LegacyOutcome),
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum EvaluationVersion {
+#[serde(tag = "evaluation_version")]
+pub enum WeightedOutcome {
     #[serde(rename = "v2")]
-    V2,
+    V2 {
+        #[serde(deserialize_with = "deserialize_weighted_evaluation")]
+        evaluation: EvaluationScores<SummaryScores>,
+    },
+    #[serde(rename = "v3")]
+    V3 {
+        #[serde(deserialize_with = "deserialize_weighted_evaluation")]
+        evaluation: EvaluationScores,
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -116,27 +126,42 @@ impl Default for Buddy {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct EvaluationScores {
-    pub scores: JevEvaluation,
+pub struct EvaluationScores<S = JevEvaluation> {
+    pub scores: S,
     pub total_score: u8,
     pub judgment: Judgment,
     pub improvements: [String; 3],
 }
 
-fn deserialize_weighted_evaluation<'de, D: serde::Deserializer<'de>>(
+fn deserialize_weighted_evaluation<'de, D: serde::Deserializer<'de>, S: Deserialize<'de>>(
     deserializer: D,
-) -> Result<EvaluationScores, D::Error> {
+) -> Result<EvaluationScores<S>, D::Error> {
     let evaluation = EvaluationScores::deserialize(deserializer)?;
-    if !evaluation.scores.is_valid()
-        || evaluation.total_score > 100
+    if evaluation.total_score > 100
         || evaluation
             .improvements
             .iter()
             .any(|text| text.trim().is_empty())
     {
-        return Err(serde::de::Error::custom("invalid v2 evaluation"));
+        return Err(serde::de::Error::custom("invalid weighted evaluation"));
     }
     Ok(evaluation)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SummaryScores {
+    #[serde(deserialize_with = "deserialize_bounded::<_, 4>")]
+    pub faithfulness: f64,
+    #[serde(deserialize_with = "deserialize_bounded::<_, 4>")]
+    pub coverage: f64,
+    #[serde(deserialize_with = "deserialize_bounded::<_, 4>")]
+    pub relevance: f64,
+    #[serde(deserialize_with = "deserialize_bounded::<_, 4>")]
+    pub conciseness: f64,
+    #[serde(deserialize_with = "deserialize_bounded::<_, 4>")]
+    pub clarity: f64,
+    #[serde(deserialize_with = "deserialize_bounded::<_, 1>")]
+    pub critical_error: f64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

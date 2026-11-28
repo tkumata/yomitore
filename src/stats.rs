@@ -1,7 +1,7 @@
 use crate::evaluation::Outcome;
 use crate::models::{
-    Badge, BadgeType, Buddy, DailyStats, EvaluationScores, EvaluationVersion, RecordedOutcome,
-    TrainingResult, WeeklyStats, local_timestamp,
+    Badge, BadgeType, Buddy, DailyStats, EvaluationScores, RecordedOutcome, TrainingResult,
+    WeeklyStats, WeightedOutcome, local_timestamp,
 };
 use crate::stats_analysis;
 use jiff::{SignedDuration, Timestamp, civil::Date, tz::TimeZone};
@@ -96,10 +96,9 @@ impl TrainingStats {
     }
 
     pub fn add_evaluation(&mut self, evaluation: EvaluationScores) {
-        self.add_result(RecordedOutcome::Weighted {
-            evaluation_version: EvaluationVersion::V2,
+        self.add_result(RecordedOutcome::Weighted(WeightedOutcome::V3 {
             evaluation,
-        });
+        }));
     }
 
     fn add_result(&mut self, outcome: RecordedOutcome) {
@@ -534,9 +533,10 @@ mod tests {
             timestamp: now + SignedDuration::from_hours(24),
             ..result
         });
-        let (summary, weighted) =
+        let (summary, weighted, reading) =
             stats_analysis::get_recent_evaluation_summaries(&stats.results, 1, today, &zone);
         assert_eq!(weighted.count, 0);
+        assert_eq!(reading.count, 0);
         assert_eq!(summary.count, 2);
         let importance = summary
             .scores

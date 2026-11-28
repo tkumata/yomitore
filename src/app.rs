@@ -63,7 +63,7 @@ pub const STATUS_HELP: &str = "ヘルプ表示中。'h' で閉じる";
 pub const STATUS_GENERATING: &str = "文章を生成中...";
 pub const STATUS_NEXT_GENERATING: &str = "次の文章を生成中...";
 const STATUS_GENERATION_FAILED: &str = "文章を生成できませんでした。'n' で再試行。";
-pub const STATUS_EVALUATING: &str = "要約を評価中...";
+pub const STATUS_EVALUATING: &str = "読解を評価中...";
 pub const STATUS_EVALUATED: &str = "評価が完了。'e' で切替、'n' で次の問題。";
 pub const STATUS_INVALID_EVALUATION: &str = "評価結果の形式が不正。";
 pub const STATUS_RUNTIME_ERROR: &str = "エラーが発生しました。";
@@ -86,6 +86,7 @@ pub struct App {
     pub selected_menu_item: usize,
     pub diagnosis_mode: bool,
     pub help_scroll: u16,
+    pub report_scroll: u16,
     pub should_quit: bool,
     pub evaluation_outcome: Option<Outcome>,
     pub show_evaluation_overlay: bool,
@@ -114,6 +115,7 @@ impl Default for App {
             selected_menu_item: 0,
             diagnosis_mode: false,
             help_scroll: 0,
+            report_scroll: 0,
             should_quit: false,
             evaluation_outcome: None,
             show_evaluation_overlay: false,
@@ -168,6 +170,7 @@ impl App {
     pub fn enter_report_view(&mut self) {
         self.view_mode = ViewMode::Report;
         self.status_message = STATUS_REPORT.to_string();
+        self.report_scroll = 0;
     }
 
     pub fn enter_help_view(&mut self) {
