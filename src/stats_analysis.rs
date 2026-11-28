@@ -1,6 +1,6 @@
 use crate::models::{
     DailyStats, EvaluationScoreStats, EvaluationSummary, RecordedOutcome, TrainingResult,
-    WeeklyStats,
+    WeeklyStats, WeightedOutcome,
 };
 use jiff::{SignedDuration, Span, Timestamp, civil::Date, tz::TimeZone};
 use std::collections::HashMap;
@@ -47,14 +47,20 @@ pub fn get_recent_evaluation_summaries(
     days: usize,
     today: Date,
     zone: &TimeZone,
-) -> (EvaluationSummary<3>, EvaluationSummary<6>) {
+) -> (
+    EvaluationSummary<3>,
+    EvaluationSummary<6>,
+    EvaluationSummary<4>,
+) {
     let start_date =
         today - Span::new().days(i64::try_from(days.saturating_sub(1)).unwrap_or(i64::MAX));
 
     let mut legacy_scores = std::array::from_fn(|_| Vec::new());
-    let mut weighted_scores = std::array::from_fn(|_| Vec::new());
+    let mut summary_scores = std::array::from_fn(|_| Vec::new());
+    let mut reading_scores = std::array::from_fn(|_| Vec::new());
     let mut legacy_count = 0;
-    let mut weighted_count = 0;
+    let mut summary_count = 0;
+    let mut reading_count = 0;
 
     for result in results {
         if days == 0 || !(start_date..=today).contains(&zone.to_datetime(result.timestamp).date()) {
@@ -74,16 +80,31 @@ pub fn get_recent_evaluation_summaries(
                     legacy_count += 1;
                 }
             }
-            RecordedOutcome::Weighted { evaluation, .. } => {
-                let scores = evaluation
+            RecordedOutcome::Weighted(WeightedOutcome::V2 { evaluation }) => {
+                let scores = &evaluation.scores;
+                let values = [
+                    scores.faithfulness,
+                    scores.coverage,
+                    scores.relevance,
+                    scores.conciseness,
+                    scores.clarity,
+                    f64::from(evaluation.total_score),
+                ];
+                for (column, score) in summary_scores.iter_mut().zip(values) {
+                    column.push(score);
+                }
+                summary_count += 1;
+            }
+            RecordedOutcome::Weighted(WeightedOutcome::V3 { evaluation }) => {
+                let values = evaluation
                     .scores
                     .scores()
                     .into_iter()
                     .chain([f64::from(evaluation.total_score)]);
-                for (column, score) in weighted_scores.iter_mut().zip(scores) {
+                for (column, score) in reading_scores.iter_mut().zip(values) {
                     column.push(score);
                 }
-                weighted_count += 1;
+                reading_count += 1;
             }
         }
     }
@@ -94,8 +115,12 @@ pub fn get_recent_evaluation_summaries(
             scores: legacy_scores.map(calculate_score_stats),
         },
         EvaluationSummary {
-            count: weighted_count,
-            scores: weighted_scores.map(calculate_score_stats),
+            count: summary_count,
+            scores: summary_scores.map(calculate_score_stats),
+        },
+        EvaluationSummary {
+            count: reading_count,
+            scores: reading_scores.map(calculate_score_stats),
         },
     )
 }

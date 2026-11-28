@@ -143,27 +143,32 @@ fn render_evaluation_summary(
     zone: &TimeZone,
     width: usize,
 ) -> Vec<Line<'static>> {
-    let (legacy, weighted) =
+    let (legacy, summary, reading) =
         get_recent_evaluation_summaries(&stats.results, REPORT_DAYS, today, zone);
-    let [faithfulness, coverage, relevance, conciseness, clarity] = SCORE_LABELS;
+    let [explicit_information, overall_meaning, relationships] = SCORE_LABELS;
     let mut lines = Vec::new();
     append_score_summary(
         &mut lines,
-        "新 v2 0〜4点",
+        "読解 v3 0〜4点",
         [
-            faithfulness,
-            coverage,
-            relevance,
-            conciseness,
-            clarity,
+            explicit_information,
+            overall_meaning,
+            relationships,
             "総合/100",
         ],
-        weighted,
+        reading,
         width,
     );
     append_score_summary(
         &mut lines,
-        "旧 v1 1〜5点",
+        "要約 v2 0〜4点",
+        ["忠実性", "網羅性", "重要度", "簡潔性", "明瞭性", "総合/100"],
+        summary,
+        width,
+    );
+    append_score_summary(
+        &mut lines,
+        "要約 v1 1〜5点",
         ["重要情報", "簡潔性", "正確性"],
         legacy,
         width,
@@ -174,7 +179,12 @@ fn render_evaluation_summary(
     lines
 }
 
-pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStats) {
+pub fn render_unified_report(
+    frame: &mut Frame,
+    area: Rect,
+    stats: &TrainingStats,
+    scroll: &mut u16,
+) {
     let now = Timestamp::now();
     let zone = TimeZone::system();
     let today = zone.to_datetime(now).date();
@@ -231,22 +241,18 @@ pub fn render_unified_report(frame: &mut Frame, area: Rect, stats: &TrainingStat
 
     let daily_stats = stats.get_daily_stats(REPORT_DAYS, today, &zone);
     let monthly_block = Block::default()
-        .title("180日 (過去180日)")
+        .title("過去180日 (↑/↓・k/j)")
         .borders(Borders::ALL);
     let monthly_inner = monthly_block.inner(*monthly_area);
     frame.render_widget(monthly_block, *monthly_area);
-    let summary = render_evaluation_summary(stats, today, &zone, usize::from(monthly_inner.width));
-    let heatmap = create_heatmap_for_date(&daily_stats, today);
-    let summary_height = u16::try_from(summary.len()).unwrap_or(u16::MAX);
-    let monthly_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(summary_height), Constraint::Min(0)])
-        .split(monthly_inner);
-    let [summary_area, heatmap_area] = monthly_layout.as_ref() else {
-        return;
-    };
-    frame.render_widget(Paragraph::new(summary), *summary_area);
-    frame.render_widget(Paragraph::new(heatmap), *heatmap_area);
+    let mut lines =
+        render_evaluation_summary(stats, today, &zone, usize::from(monthly_inner.width));
+    lines.extend(create_heatmap_for_date(&daily_stats, today).lines);
+    let max_scroll = lines
+        .len()
+        .saturating_sub(usize::from(monthly_inner.height));
+    *scroll = (*scroll).min(u16::try_from(max_scroll).unwrap_or(u16::MAX));
+    frame.render_widget(Paragraph::new(lines).scroll((*scroll, 0)), monthly_inner);
 
     let weekly_stats = stats.get_weekly_stats(WEEKS_TO_SHOW, now);
     let weekly_block = Block::default()
@@ -428,7 +434,7 @@ mod tests {
         clippy::panic_in_result_fn,
         reason = "Test assertions report the failed invariant"
     )]
-    fn report_displays_both_versions_and_review_on_an_80_by_22_terminal()
+    fn report_displays_three_versions_and_scrolls_on_an_80_by_22_terminal()
     -> Result<(), Box<dyn std::error::Error>> {
         let now = Timestamp::now() - jiff::SignedDuration::from_hours(12);
         let mut stats: TrainingStats = serde_json::from_value(serde_json::json!({
@@ -439,6 +445,16 @@ mod tests {
                     "appropriate": true, "importance": 4, "conciseness": 3, "accuracy": 5,
                     "improvement1": "a", "improvement2": "b", "improvement3": "c",
                     "overall_passed": true
+                }
+            }, {
+                "timestamp": now,
+                "evaluation_version": "v2",
+                "evaluation": {
+                    "scores": {
+                        "faithfulness": 3.5, "coverage": 4, "relevance": 4,
+                        "conciseness": 4, "clarity": 4, "critical_error": 0.30
+                    },
+                    "total_score": 95, "judgment": "excellent", "improvements": ["a", "b", "c"]
                 }
             }]
         }))?;
@@ -453,27 +469,32 @@ mod tests {
             improvements: ["a".into(), "b".into(), "c".into()],
         });
         let mut terminal = Terminal::new(TestBackend::new(80, 22))?;
-        terminal.draw(|frame| render_unified_report(frame, frame.area(), &stats))?;
-        let rendered: String = terminal
-            .backend()
-            .buffer()
-            .content()
-            .chunks(80)
-            .map(|row| {
-                row.iter()
-                    .map(Cell::symbol)
-                    .collect::<String>()
-                    .replace(' ', "")
-                    + "\n"
-            })
-            .collect();
+        let rendered_text = |buffer: &ratatui::buffer::Buffer| -> String {
+            buffer
+                .content()
+                .chunks(80)
+                .map(|row| {
+                    row.iter()
+                        .map(Cell::symbol)
+                        .collect::<String>()
+                        .replace(' ', "")
+                        + "\n"
+                })
+                .collect()
+        };
+        let mut scroll = 0;
+        let completed = terminal
+            .draw(|frame| render_unified_report(frame, frame.area(), &stats, &mut scroll))?;
+        let rendered = rendered_text(completed.buffer);
         for expected in [
-            "新v20〜4点",
-            "旧v11〜5点",
+            "読解v30〜4点",
+            "要約v20〜4点",
+            "要約v11〜5点",
+            "明示情報3.5/3.5",
             "忠実性3.5/3.5",
             "簡潔性3.0/3.0",
             "総合/10095.0/95.0",
-            "◆",
+            "総合/10096.0/96.0",
             "要確認1",
             "第4週",
         ] {
@@ -483,6 +504,13 @@ mod tests {
             );
         }
         assert_eq!(rendered.matches("要確認0").count(), 3);
+        scroll = u16::MAX;
+        let completed = terminal
+            .draw(|frame| render_unified_report(frame, frame.area(), &stats, &mut scroll))?;
+        assert!(scroll > 0 && scroll < u16::MAX);
+        let rendered = rendered_text(completed.buffer);
+        assert!(rendered.contains("◆要確認"), "{rendered}");
+        assert!(rendered.contains("第4週"));
         Ok(())
     }
 

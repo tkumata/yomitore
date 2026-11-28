@@ -233,7 +233,7 @@ fn render_evaluation_overlay(app: &App, frame: &mut Frame) {
     };
 
     let block = Block::default()
-        .title(" 評価結果 (e:閉じる | Shift+↑/↓ or Shift+j/k:スクロール | n:次の問題) ")
+        .title(" 読解結果 (e:閉じる | Shift+↑/↓ or Shift+j/k:スクロール | n:次の問題) ")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(Color::Black));
@@ -277,7 +277,7 @@ fn render_status_bar(app: &App, frame: &mut Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_report_view(app: &App, frame: &mut Frame) {
+fn render_report_view(app: &mut App, frame: &mut Frame) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -290,7 +290,7 @@ fn render_report_view(app: &App, frame: &mut Frame) {
         return;
     };
     render_header(app, frame, *header_area);
-    reports::render_unified_report(frame, *body_area, &app.stats);
+    reports::render_unified_report(frame, *body_area, &app.stats, &mut app.report_scroll);
     render_status_bar(app, frame, *status_area);
 }
 
@@ -557,18 +557,23 @@ mod tests {
         for (probability, expected, color) in [
             (0.30, "優秀・合格", Color::Green),
             (0.5, "要確認", Color::Yellow),
-            (0.70, "不合格（重大な誤り", Color::Red),
+            (0.70, "不合格（重大な読み違い", Color::Red),
         ] {
             scores.critical_error = probability;
             let judgment = Judgment::from_scores(total, probability);
-            app.finish_evaluation(
-                format_jev_evaluation_display(&scores, total, judgment, &improvements),
-                judgment.outcome(),
-            );
-            terminal.draw(|frame| render_evaluation_overlay(&app, frame))?;
-            let cells = terminal.backend().buffer().content();
-            let rendered: String = cells.iter().map(ratatui::buffer::Cell::symbol).collect();
-            assert!(rendered.replace(' ', "").contains(expected));
+            let display = format_jev_evaluation_display(&scores, total, judgment, &improvements);
+            assert!(display.contains("\n\n- 読み違い・確認できなかった点:"));
+            assert!(display.contains("\n\n- 原文の根拠・読み返す箇所:"));
+            app.finish_evaluation(display, judgment.outcome());
+            let completed = terminal.draw(|frame| render_evaluation_overlay(&app, frame))?;
+            let cells = completed.buffer.content();
+            let rendered = cells
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                .replace(' ', "");
+            assert!(rendered.contains(expected));
+            assert!(rendered.contains("確認できた理解"));
             assert!(cells.iter().any(|cell| cell.fg == color));
         }
         Ok(())
